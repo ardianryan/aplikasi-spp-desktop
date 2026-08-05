@@ -1,0 +1,59 @@
+name: Build & Release Desktop Installers (Windows & macOS)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'macos-latest'
+            args: '--target aarch64-apple-darwin'
+          - platform: 'windows-latest'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Rust Stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
+
+      - name: Install Dependencies (Linux/macOS)
+        if: matrix.platform != 'windows-latest'
+        run: |
+          npm install
+
+      - name: Install Dependencies (Windows)
+        if: matrix.platform == 'windows-latest'
+        run: |
+          npm install
+
+      - name: Build Tauri Application & Release Artifacts
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__ # Will be replaced by tauri-action from git tag
+          releaseName: 'Partisipasi Sekolah Desktop v__VERSION__'
+          releaseBody: 'Silakan unduh file installer .exe (Windows) atau .dmg (macOS) di bawah ini.'
+          releaseDraft: false
+          prerelease: true
+          args: ${{ matrix.args }}
