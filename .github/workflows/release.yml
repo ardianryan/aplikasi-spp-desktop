@@ -68,5 +68,5 @@ jobs:
           releaseName: 'Partisipasi Sekolah Desktop ${{ github.ref_name }}'
           releaseBody: 'Silakan unduh file installer .exe / .msi (Windows) atau .dmg (macOS) di bawah ini.'
           releaseDraft: false
-          prerelease: true
+          prerelease: false
           args: ${{ matrix.args }}

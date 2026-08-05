@@ -1,7 +1,7 @@
 # Partisipasi Sekolah Desktop Client 🏫💳
 **Aplikasi Kasir POS & Tabungan Sekolah Offline-First Berbasis Desktop**
 
-[![Release](https://img.shields.io/badge/release-v0.1.0--alpha-blue.svg)](https://github.com/nextlevelbuilder/partisipasi-desktop)
+[![Release](https://img.shields.io/badge/release-v0.1.0-blue.svg)](https://github.com/ardianryan/aplikasi-spp-desktop/releases/tag/v0.1.0)
 [![Security](https://img.shields.io/badge/security-SQLCipher%20AES--256-emerald.svg)](SECURITY.md)
 [![Compliance](https://img.shields.io/badge/compliance-UU%20PDP%20%7C%20UU%20ITE-002b59.svg)](SECURITY.md)
 [![Stack](https://img.shields.io/badge/tech--stack-Tauri%20v2%20%7C%20Rust%20%7C%20React%2019-indigo.svg)](#-teknologi--arsitektur)
