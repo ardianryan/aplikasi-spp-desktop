@@ -39,8 +39,7 @@
         "headerImage": "icons/Square150x150Logo.png",
         "sidebarImage": "icons/Square310x310Logo.png",
         "installerIcon": "icons/icon.ico",
-        "installMode": "both",
-        "installerHooks": "nsis/installer-hooks.nsi"
+        "installMode": "both"
       }
     }
   },
