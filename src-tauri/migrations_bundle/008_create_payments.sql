@@ -1,0 +1,26 @@
+-- Payments (Transaksi Pembayaran)
+CREATE TABLE IF NOT EXISTS `payments` (
+    `id` VARCHAR(36) NOT NULL,
+    `transaction_code` VARCHAR(30) NOT NULL,
+    `student_id` VARCHAR(36) NOT NULL,
+    `user_id` VARCHAR(36) DEFAULT NULL COMMENT 'Petugas penerima',
+    `total_amount` DECIMAL(15,2) NOT NULL DEFAULT 0,
+    `payment_method_id` VARCHAR(36) DEFAULT NULL,
+    `payment_method_name` VARCHAR(100) DEFAULT NULL COMMENT 'Snapshot nama metode',
+    `notes` TEXT DEFAULT NULL,
+    `academic_year_id` VARCHAR(36) NOT NULL,
+    `midtrans_order_id` VARCHAR(100) DEFAULT NULL,
+    `midtrans_status` VARCHAR(20) DEFAULT NULL,
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `idx_payments_transaction_code` (`transaction_code`),
+    KEY `idx_payments_student` (`student_id`),
+    KEY `idx_payments_user` (`user_id`),
+    KEY `idx_payments_academic_year` (`academic_year_id`),
+    KEY `idx_payments_created_at` (`created_at`),
+    KEY `idx_payments_method` (`payment_method_id`),
+    CONSTRAINT `fk_payments_student` FOREIGN KEY (`student_id`) REFERENCES `students`(`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_payments_user` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE SET NULL,
+    CONSTRAINT `fk_payments_academic_year` FOREIGN KEY (`academic_year_id`) REFERENCES `academic_years`(`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_payments_method` FOREIGN KEY (`payment_method_id`) REFERENCES `payment_methods`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
