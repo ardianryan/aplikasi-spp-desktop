@@ -36,13 +36,25 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
 
-      - name: Setup OpenSSL Environment (Windows Only)
+      - name: Install & Detect OpenSSL (Windows Only)
         if: matrix.platform == 'windows-latest'
         shell: powershell
         run: |
-          echo "OPENSSL_DIR=C:\Program Files\OpenSSL-Win64" >> $env:GITHUB_ENV
-          echo "OPENSSL_LIB_DIR=C:\Program Files\OpenSSL-Win64\lib" >> $env:GITHUB_ENV
-          echo "OPENSSL_INCLUDE_DIR=C:\Program Files\OpenSSL-Win64\include" >> $env:GITHUB_ENV
+          choco install openssl -y --no-progress
+          if (Test-Path "C:\Program Files\OpenSSL-Win64\include\openssl\crypto.h") {
+            $dir = "C:\Program Files\OpenSSL-Win64"
+          } elseif (Test-Path "C:\Program Files\OpenSSL\include\openssl\crypto.h") {
+            $dir = "C:\Program Files\OpenSSL"
+          } elseif (Test-Path "C:\tools\openssl\include\openssl\crypto.h") {
+            $dir = "C:\tools\openssl"
+          } else {
+            Write-Error "OpenSSL include files not found!"
+            exit 1
+          }
+          Write-Host "Detected OpenSSL at $dir"
+          echo "OPENSSL_DIR=$dir" >> $env:GITHUB_ENV
+          echo "OPENSSL_LIB_DIR=$dir\lib" >> $env:GITHUB_ENV
+          echo "OPENSSL_INCLUDE_DIR=$dir\include" >> $env:GITHUB_ENV
 
       - name: Install Dependencies
         run: npm install
