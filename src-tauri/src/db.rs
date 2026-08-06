@@ -67,9 +67,24 @@ pub fn init_db(app_handle: &AppHandle) -> Result<Connection, String> {
     conn.execute_batch(&format!("PRAGMA key = '{}';", cipher_key.replace("'", "''")))
         .map_err(|e| format!("Gagal mengaktifkan SQLCipher key: {}", e))?;
         
-    // Enable foreign keys
-    conn.execute("PRAGMA foreign_keys = ON;", [])
-        .map_err(|e| format!("Gagal mengaktifkan PRAGMA foreign_keys: {}", e))?;
+    // Enable foreign keys and test read access
+    if let Err(e) = conn.execute("PRAGMA foreign_keys = ON;", []) {
+        let err_str = e.to_string();
+        if err_str.contains("file is not a database") || err_str.contains("NOTADB") {
+            println!("DB lama tidak terenkripsi atau corrupt. Membuat ulang database terenkripsi baru...");
+            drop(conn);
+            let _ = fs::remove_file(&db_path);
+            
+            let conn_new = Connection::open(&db_path)
+                .map_err(|e| format!("Gagal membuka database SQLite baru: {}", e))?;
+            conn_new.execute_batch(&format!("PRAGMA key = '{}';", cipher_key.replace("'", "''")))
+                .map_err(|e| format!("Gagal mengaktifkan SQLCipher key baru: {}", e))?;
+            conn_new.execute("PRAGMA foreign_keys = ON;", [])
+                .map_err(|e| format!("Gagal mengaktifkan PRAGMA foreign_keys: {}", e))?;
+            return Ok(conn_new);
+        }
+        return Err(format!("Gagal mengaktifkan PRAGMA foreign_keys: {}", e));
+    }
         
     Ok(conn)
 }
