@@ -40,17 +40,32 @@ jobs:
         if: matrix.platform == 'windows-latest'
         shell: powershell
         run: |
-          choco install openssl -y --no-progress
-          if (Test-Path "C:\Program Files\OpenSSL-Win64\include\openssl\crypto.h") {
-            $dir = "C:\Program Files\OpenSSL-Win64"
-          } elseif (Test-Path "C:\Program Files\OpenSSL\include\openssl\crypto.h") {
+          $dir = $null
+          if (Test-Path "C:\Program Files\OpenSSL\include\openssl\crypto.h") {
             $dir = "C:\Program Files\OpenSSL"
+          } elseif (Test-Path "C:\Program Files\OpenSSL-Win64\include\openssl\crypto.h") {
+            $dir = "C:\Program Files\OpenSSL-Win64"
           } elseif (Test-Path "C:\tools\openssl\include\openssl\crypto.h") {
             $dir = "C:\tools\openssl"
           } else {
+            Write-Host "OpenSSL not found in standard paths, installing..."
+            try {
+              choco install openssl -y --no-progress
+            } catch {
+              Write-Host "Choco install failed, trying fallback check..."
+            }
+            if (Test-Path "C:\Program Files\OpenSSL\include\openssl\crypto.h") {
+              $dir = "C:\Program Files\OpenSSL"
+            } elseif (Test-Path "C:\Program Files\OpenSSL-Win64\include\openssl\crypto.h") {
+              $dir = "C:\Program Files\OpenSSL-Win64"
+            }
+          }
+
+          if (-not $dir) {
             Write-Error "OpenSSL include files not found!"
             exit 1
           }
+
           Write-Host "Detected OpenSSL at $dir"
           echo "OPENSSL_DIR=$dir" >> $env:GITHUB_ENV
           echo "OPENSSL_LIB_DIR=$dir\lib" >> $env:GITHUB_ENV
