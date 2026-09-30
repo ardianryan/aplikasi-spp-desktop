@@ -1,14 +1,16 @@
 use tauri::State;
-use tauri::AppHandle;
 use rusqlite::params;
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use chrono::Local;
+use sha2::{Sha256, Digest};
 
-use crate::db::{DbState, update_cipher_seed};
+use crate::PendingDeepLink;
+use crate::db::DbState;
 use crate::sync::{
     get_sync_settings, set_sync_settings, fetch_pull_payload, apply_pull_payload,
-    get_all_pending_records, upload_push_payload, mark_pushed_records_synced
+    get_all_pending_records, upload_push_payload, mark_pushed_records_synced,
+    verify_token_with_server
 };
 
 // Structs untuk transfer data ke Frontend
@@ -565,11 +567,9 @@ pub fn get_school_settings(state: State<'_, DbState>) -> Result<std::collections
 }
 
 #[tauri::command]
-pub fn set_sync_config(api_url: String, api_key: String, state: State<'_, DbState>, app_handle: AppHandle) -> Result<(), String> {
+pub fn set_sync_config(api_url: String, api_key: String, state: State<'_, DbState>) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
     set_sync_settings(&conn, &api_url, &api_key)?;
-    // Update cipher seed so next DB open uses the API key as passphrase basis
-    update_cipher_seed(&app_handle, &api_key);
     Ok(())
 }
 
@@ -634,14 +634,15 @@ pub async fn trigger_sync(state: State<'_, DbState>) -> Result<String, String> {
     let mut push_result = "Tidak ada data transaksi lokal baru untuk di-push.".to_string();
     if total_pending > 0 {
         // 5. Unggah data PUSH ke server online (Tanpa menahan lock database)
-        upload_push_payload(&api_url, &api_key, &pending_payload, total_pending).await?;
+        let synced_ids = upload_push_payload(&api_url, &api_key, &pending_payload, total_pending).await?;
+        let total_synced: usize = synced_ids.values().map(|v| v.len()).sum();
         
-        // 6. Tandai record yang sukses sebagai synced di SQLite (Lock database)
+        // 6. Tandai record yang terkonfirmasi sukses sebagai synced di SQLite (Lock database)
         {
             let conn = state.conn.lock().unwrap();
-            mark_pushed_records_synced(&conn, &pending_payload)?;
+            mark_pushed_records_synced(&conn, &synced_ids)?;
         }
-        push_result = format!("Berhasil mensinkronkan {} transaksi lokal ke server.", total_pending);
+        push_result = format!("Berhasil mensinkronkan {} dari {} transaksi lokal ke server.", total_synced, total_pending);
     }
     
     Ok(format!("Pull Sukses (Timestamp Server: {}). {}", sync_time, push_result))
@@ -687,28 +688,81 @@ pub fn get_active_session(state: State<'_, DbState>) -> Result<Option<UserSessio
 }
 
 #[tauri::command]
-pub fn save_session(
+pub async fn save_session(
     token: String,
     nama: String,
     role: String,
     state: State<'_, DbState>,
 ) -> Result<UserSession, String> {
+    // 1. Ambil sync config
+    let (api_url, api_key) = {
+        let conn = state.conn.lock().unwrap();
+        get_sync_settings(&conn)
+    };
+
+    // 2. Jika api_url tersedia, lakukan validasi resmi ke peladen
+    let (final_user_id, final_nama, final_role, returned_api_key) = if !api_url.is_empty() {
+        match verify_token_with_server(&api_url, &api_key, &token).await {
+            Ok(verified) => (Some(verified.user.id), verified.user.nama, verified.user.role, verified.api_key),
+            Err(e) => {
+                println!("Verifikasi token server gagal/offline: {}", e);
+                // Jika offline atau token lokal khusus, periksa apakah token sudah ada di SQLite
+                let conn = state.conn.lock().unwrap();
+                let local_user: Option<(String, String, String)> = conn.query_row(
+                    "SELECT u.id, u.nama, u.role FROM user_tokens ut JOIN users u ON ut.user_id = u.id WHERE ut.token = ? LIMIT 1;",
+                    [&token],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+                ).ok();
+
+                if let Some((uid, u_nama, u_role)) = local_user {
+                    (Some(uid), u_nama, u_role, String::new())
+                } else if token.starts_with("offline_") {
+                    (None, nama, role, String::new())
+                } else {
+                    return Err(format!("Autentikasi ditolak oleh peladen: {}", e));
+                }
+            }
+        }
+    } else {
+        (None, nama, role, String::new())
+    };
+
     let conn = state.conn.lock().unwrap();
     let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    // Simpan API Key jika peladen mengembalikannya (Zero-Config provisioning)
+    if !returned_api_key.is_empty() {
+        conn.execute(
+            "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_key', ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+            [&returned_api_key],
+        ).ok();
+    }
     
-    let user_id: String = conn.query_row(
-        "SELECT id FROM users WHERE nama = ? LIMIT 1;",
-        [&nama],
-        |row| row.get(0)
-    ).unwrap_or_else(|_| {
-        let new_uid = Uuid::new_v4().to_string();
+    let user_id = if let Some(uid) = final_user_id {
+        // Upsert user resmi ke database SQLite lokal
         conn.execute(
             "INSERT INTO users (id, username, nama, role, is_active, created_at) 
-             VALUES (?, ?, ?, ?, 1, ?);",
-            params![new_uid, format!("sso_{}", &Uuid::new_v4().to_string()[..8]), nama, role, now_str]
-        ).unwrap();
-        new_uid
-    });
+             VALUES (?, ?, ?, ?, 1, ?)
+             ON CONFLICT(id) DO UPDATE SET nama = excluded.nama, role = excluded.role, is_active = 1;",
+            params![uid, format!("usr_{}", &uid[..8.min(uid.len())]), final_nama, final_role, now_str]
+        ).map_err(|e| format!("Gagal menyimpan user: {}", e))?;
+        uid
+    } else {
+        conn.query_row(
+            "SELECT id FROM users WHERE nama = ? LIMIT 1;",
+            [&final_nama],
+            |row| row.get(0)
+        ).unwrap_or_else(|_| {
+            let new_uid = Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO users (id, username, nama, role, is_active, created_at) 
+                 VALUES (?, ?, ?, ?, 1, ?);",
+                params![new_uid, format!("sso_{}", &Uuid::new_v4().to_string()[..8]), final_nama, final_role, now_str]
+            ).unwrap();
+            new_uid
+        })
+    };
     
     let token_id = Uuid::new_v4().to_string();
     conn.execute(
@@ -718,8 +772,63 @@ pub fn save_session(
     
     Ok(UserSession {
         token,
-        nama,
-        role,
+        nama: final_nama,
+        role: final_role,
+    })
+}
+
+#[tauri::command]
+pub async fn login_with_pairing_code(
+    code: String,
+    state: State<'_, DbState>,
+) -> Result<UserSession, String> {
+    let clean_code = code.trim().replace(" ", "").replace("-", "");
+    if clean_code.len() < 6 {
+        return Err("Kode otorisasi harus terdiri atas 6 digit angka.".to_string());
+    }
+
+    let (api_url, api_key) = {
+        let conn = state.conn.lock().unwrap();
+        get_sync_settings(&conn)
+    };
+
+    if api_url.is_empty() {
+        return Err("Alamat peladen web sekolah belum dikonfigurasi. Silakan periksa pengaturan sambungan.".to_string());
+    }
+
+    let exchange = crate::sync::exchange_code_with_server(&api_url, &api_key, &clean_code).await?;
+
+    let conn = state.conn.lock().unwrap();
+    let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    // Simpan API Key jika peladen mengembalikannya (Zero-Config provisioning)
+    if !exchange.api_key.is_empty() {
+        conn.execute(
+            "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_key', ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+            [&exchange.api_key],
+        ).ok();
+    }
+
+    let uid = exchange.user.id;
+
+    conn.execute(
+        "INSERT INTO users (id, username, nama, role, is_active, created_at) 
+         VALUES (?, ?, ?, ?, 1, ?)
+         ON CONFLICT(id) DO UPDATE SET nama = excluded.nama, role = excluded.role, is_active = 1;",
+        params![uid, exchange.user.username, exchange.user.nama, exchange.user.role, now_str]
+    ).map_err(|e| format!("Gagal menyimpan profil pengguna: {}", e))?;
+
+    let token_id = Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO user_tokens (id, user_id, token, created_at) VALUES (?, ?, ?, ?);",
+        params![token_id, uid, exchange.token, now_str]
+    ).map_err(|e| format!("Gagal menyimpan token sesi: {}", e))?;
+
+    Ok(UserSession {
+        token: exchange.token,
+        nama: exchange.user.nama,
+        role: exchange.user.role,
     })
 }
 
@@ -729,6 +838,122 @@ pub fn logout(state: State<'_, DbState>) -> Result<(), String> {
     conn.execute("DELETE FROM user_tokens;", [])
         .map_err(|e| format!("Gagal logout: {}", e))?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn get_pending_deep_link(state: State<'_, PendingDeepLink>) -> Option<String> {
+    state.0.lock().unwrap().take()
+}
+
+fn hash_pin_sha256(pin: &str) -> String {
+    let mut hasher = Sha256::new();
+    // Salt domain separation untuk mencegah serangan precomputed rainbow table (v1)
+    hasher.update(b"psk_offline_pin_salt_v1:");
+    hasher.update(pin.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn hash_pin_with_salt(pin: &str, salt: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"psk_offline_pin_v2:");
+    hasher.update(salt.as_bytes());
+    hasher.update(b":");
+    hasher.update(pin.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+#[tauri::command]
+pub fn set_offline_pin(pin: String, state: State<'_, DbState>) -> Result<(), String> {
+    let trimmed = pin.trim();
+    if trimmed.len() != 6 || !trimmed.chars().all(|c| c.is_ascii_digit()) {
+        return Err("PIN harus berupa 6 digit angka.".to_string());
+    }
+    
+    let conn = state.conn.lock().unwrap();
+    
+    // Dapatkan atau buat salt dinamis unik per perangkat
+    let salt: String = conn.query_row(
+        "SELECT value FROM settings WHERE key = 'cashier_offline_pin_salt';",
+        [],
+        |row| row.get(0)
+    ).unwrap_or_else(|_| {
+        let new_salt = Uuid::new_v4().to_string().replace("-", "");
+        let _ = conn.execute(
+            "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'cashier_offline_pin_salt', ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+            [&new_salt],
+        );
+        new_salt
+    });
+
+    let hashed = hash_pin_with_salt(trimmed, &salt);
+    conn.execute(
+        "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'cashier_offline_pin', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+        [&hashed],
+    ).map_err(|e| format!("Gagal menyimpan PIN offline: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn has_offline_pin(state: State<'_, DbState>) -> Result<bool, String> {
+    let conn = state.conn.lock().unwrap();
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM settings WHERE key = 'cashier_offline_pin' AND value IS NOT NULL AND length(value) > 0;",
+        [],
+        |row| row.get(0)
+    ).unwrap_or(0);
+    Ok(count > 0)
+}
+
+#[tauri::command]
+pub fn verify_offline_pin(pin: String, state: State<'_, DbState>) -> Result<Option<UserSession>, String> {
+    let trimmed = pin.trim();
+    let conn = state.conn.lock().unwrap();
+
+    let salt: String = conn.query_row(
+        "SELECT value FROM settings WHERE key = 'cashier_offline_pin_salt';",
+        [],
+        |row| row.get(0)
+    ).unwrap_or_default();
+
+    let hashed_v2 = hash_pin_with_salt(trimmed, &salt);
+    let hashed_v1 = hash_pin_sha256(trimmed);
+
+    let stored_hash: Option<String> = conn.query_row(
+        "SELECT value FROM settings WHERE key = 'cashier_offline_pin';",
+        [],
+        |row| row.get(0)
+    ).ok();
+
+    if let Some(expected) = stored_hash {
+        if expected == hashed_v2 || expected == hashed_v1 {
+            // Berhasil cocok, ambil session user aktif terakhir atau default kasir
+            let user: Option<(String, String, String)> = conn.query_row(
+                "SELECT id, nama, role FROM users WHERE is_active = 1 ORDER BY created_at DESC LIMIT 1;",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            ).ok();
+
+            let (user_id, nama, role) = user.unwrap_or_else(|| (Uuid::new_v4().to_string(), "Kasir Offline".to_string(), "kasir".to_string()));
+            let token = format!("offline_pin_{}", &Uuid::new_v4().to_string().replace("-", "")[..16]);
+            
+            let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let token_id = Uuid::new_v4().to_string();
+            let _ = conn.execute(
+                "INSERT INTO user_tokens (id, user_id, token, created_at) VALUES (?, ?, ?, ?);",
+                params![token_id, user_id, token, now_str]
+            );
+
+            return Ok(Some(UserSession {
+                token,
+                nama,
+                role,
+            }));
+        }
+    }
+
+    Ok(None)
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -747,6 +972,30 @@ pub struct RecentTransaction {
     pub total_amount: f64,
     pub created_at: String,
     pub sync_status: String,
+}
+
+#[tauri::command]
+pub fn get_pending_sync_count(state: State<'_, DbState>) -> Result<i64, String> {
+    let conn = state.conn.lock().unwrap();
+    let payments_pending: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM payments WHERE sync_status != 'synced';",
+        [],
+        |r| r.get(0)
+    ).unwrap_or(0);
+
+    let savings_pending: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM savings_transactions WHERE sync_status != 'synced';",
+        [],
+        |r| r.get(0)
+    ).unwrap_or(0);
+
+    let journals_pending: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM journals WHERE sync_status != 'synced';",
+        [],
+        |r| r.get(0)
+    ).unwrap_or(0);
+
+    Ok(payments_pending + savings_pending + journals_pending)
 }
 
 #[tauri::command]
@@ -815,37 +1064,63 @@ pub fn get_today_payments(state: State<'_, DbState>) -> Result<Vec<RecentTransac
 }
 
 #[tauri::command]
-pub async fn test_sync_connection(api_url: String, api_key: String) -> Result<bool, String> {
+pub async fn test_sync_connection(api_url: String, api_key: String) -> Result<String, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(8))
         .build()
         .map_err(|e| format!("Gagal inisialisasi HTTP client: {}", e))?;
 
-    let url = format!("{}/api/v1/sync/pull?since=2026-08-01%2000:00:00", api_url.trim_end_matches('/'));
+    let base_url = api_url.trim_end_matches('/');
+
+    // Jika API Key kosong, cukup uji ketersediaan peladen melalui endpoint ping
+    if api_key.trim().is_empty() {
+        let ping_url = format!("{}/api/v1/ping", base_url);
+        let res = client.get(&ping_url)
+            .send()
+            .await
+            .map_err(|e| format!("Tidak dapat menghubungi peladen: {}", e))?;
+
+        if !res.status().is_success() {
+            return Err(format!("Peladen mengembalikan kode kesalahan: {}", res.status()));
+        }
+
+        let payload: serde_json::Value = res.json()
+            .await
+            .map_err(|e| format!("Respon dari peladen tidak valid (bukan JSON): {}", e))?;
+
+        if !payload["success"].as_bool().unwrap_or(false) {
+            return Err("Peladen menolak sambungan ping.".to_string());
+        }
+
+        let school_name = payload["school_name"].as_str().unwrap_or("Sekolah");
+        return Ok(format!("Terhubung ke peladen web {}", school_name));
+    }
+
+    let url = format!("{}/api/v1/sync/pull?since=2026-08-01%2000:00:00", base_url);
     
     let res = client.get(&url)
         .header("X-API-Key", &api_key)
         .send()
         .await
-        .map_err(|e| format!("Tidak dapat menghubungi server: {}", e))?;
+        .map_err(|e| format!("Tidak dapat menghubungi peladen: {}", e))?;
 
     if res.status().as_u16() == 401 {
-        return Err("API Key tidak valid (Ditolak oleh server).".to_string());
+        return Err("API Key tidak valid (Ditolak oleh peladen).".to_string());
     }
 
     if !res.status().is_success() {
-        return Err(format!("Server mengembalikan status error: {}", res.status()));
+        return Err(format!("Peladen mengembalikan kode kesalahan: {}", res.status()));
     }
 
     let payload: serde_json::Value = res.json()
         .await
-        .map_err(|e| format!("Respon dari server tidak valid (Gagal parsing JSON): {}", e))?;
+        .map_err(|e| format!("Respon dari peladen tidak valid (Gagal membaca JSON): {}", e))?;
 
     if !payload["success"].as_bool().unwrap_or(false) {
-        return Err(payload["message"].as_str().unwrap_or("Server menolak request.").to_string());
+        return Err(payload["message"].as_str().unwrap_or("Peladen menolak permintaan.").to_string());
     }
 
-    Ok(true)
+    Ok("Koneksi berhasil dan API Key terverifikasi.".to_string())
 }
 
 #[tauri::command]

@@ -227,6 +227,7 @@ function App() {
   // Navigation State
   const [activeTab, setActiveTab] = useState<"pos" | "savings" | "journals" | "sync" | "history" | "reports">("pos");
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [pendingSyncCount, setPendingSyncCount] = useState<number>(0);
 
   // Onboarding Wizard State
   const [onboardingStep, setOnboardingStep] = useState<1 | 2 | 3>(1);
@@ -253,7 +254,7 @@ function App() {
     siswa:       schoolSettings.term_siswa       || "Siswa",
     sumbangan:   schoolSettings.term_sumbangan   || "Sumbangan",
     iuran:       schoolSettings.term_iuran       || "Iuran",
-    kwitansi:    schoolSettings.term_kwitansi    || "Kwitansi",
+    kwitansi:    schoolSettings.term_kwitansi    || "Kuitansi",
     tunggakan:   schoolSettings.term_tunggakan   || "Tunggakan",
   };
 
@@ -304,6 +305,11 @@ function App() {
   const [isEditingActivation, setIsEditingActivation] = useState(false);
   const [isActivated, setIsActivated] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
+  const [hasOfflinePin, setHasOfflinePin] = useState(false);
+  const [offlinePinInput, setOfflinePinInput] = useState("");
+  const [showPinLogin, setShowPinLogin] = useState(false);
+  const [showSetPinModal, setShowSetPinModal] = useState(false);
+  const [newPinInput, setNewPinInput] = useState("");
 
   // Today Cashier stats and history
   const [todayStats, setTodayStats] = useState({ today_total: 0, monthly_total: 0, today_count: 0 });
@@ -315,6 +321,8 @@ function App() {
       setTodayStats(stats);
       const list = await invoke<any[]>("get_today_payments");
       setRecentTransactions(list);
+      const pendingCount = await invoke<number>("get_pending_sync_count").catch(() => 0);
+      setPendingSyncCount(pendingCount);
     } catch (err) {
       console.error("Gagal memuat statistik kasir hari ini:", err);
     }
@@ -322,7 +330,10 @@ function App() {
 
   // Load dynamic online/offline state
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
+    const handleOnline = () => {
+      setIsOnline(true);
+      runSilentSync();
+    };
     const handleOffline = () => setIsOnline(false);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
@@ -331,6 +342,27 @@ function App() {
       window.removeEventListener("offline", handleOffline);
     };
   }, []);
+
+  // Aksesibilitas Keyboard: Tutup modal interaktif saat tombol Escape ditekan (Kepatuhan R-32)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (showReceiptModal) {
+          setShowReceiptModal(false);
+          setPrintReceiptData(null);
+        } else if (showSetPinModal) {
+          setShowSetPinModal(false);
+          setNewPinInput("");
+        } else if (isEditingActivation) {
+          setIsEditingActivation(false);
+        } else if (showPinLogin) {
+          setShowPinLogin(false);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showReceiptModal, showSetPinModal, isEditingActivation, showPinLogin]);
 
   // Silent sync helper
   async function runSilentSync() {
@@ -385,24 +417,46 @@ function App() {
     }
   }, [studentDetails]);
 
+  async function processDeepLinkUrl(urlStr: string) {
+    console.log("Deep link payload received:", urlStr);
+    try {
+      let clean = urlStr.trim();
+      if (clean.startsWith("partisipasi-sekolah://")) {
+        clean = clean.replace("partisipasi-sekolah://", "http://localhost/");
+      } else if (clean.startsWith("psk://")) {
+        clean = clean.replace("psk://", "http://localhost/");
+      }
+      const url = new URL(clean);
+      const token = url.searchParams.get("token");
+      const nama = decodeURIComponent(url.searchParams.get("nama") || "User");
+      const role = url.searchParams.get("role") || "kasir";
+      if (token) {
+        const sess = await invoke<UserSession>("save_session", { token, nama, role });
+        setSession(sess);
+      }
+    } catch (err: any) {
+      console.error("Gagal memproses SSO Deep Link:", err);
+      alert("Gagal memproses otorisasi desktop: " + (err?.message || err));
+    }
+  }
+
   // Load Active Academic Year & Sync Config & Session on mount
   useEffect(() => {
     loadInitialConfig();
 
-    // Listen to Deep Link authentication redirect from browser
-    const unlisten = listen<string>("desktop-login-success", async (event) => {
-      console.log("Deep link payload received:", event.payload);
-      try {
-        const url = new URL(event.payload);
-        const token = url.searchParams.get("token");
-        const nama = url.searchParams.get("nama");
-        const role = url.searchParams.get("role");
-        if (token && nama && role) {
-          const sess = await invoke<UserSession>("save_session", { token, nama, role });
-          setSession(sess);
+    // 1. Cek apakah aplikasi dibuka melalui deep link saat startup (cold-start)
+    invoke<string | null>("get_pending_deep_link")
+      .then((pendingUrl) => {
+        if (pendingUrl) {
+          processDeepLinkUrl(pendingUrl);
         }
-      } catch (err) {
-        console.error("Gagal memproses SSO Deep Link:", err);
+      })
+      .catch((err) => console.error("Gagal membaca pending deep link:", err));
+
+    // 2. Listen to Deep Link authentication redirect dari browser saat aplikasi sedang aktif
+    const unlisten = listen<string>("desktop-login-success", async (event) => {
+      if (event.payload) {
+        processDeepLinkUrl(event.payload);
       }
     });
 
@@ -474,12 +528,12 @@ function App() {
       setSchoolSettings(schoolSet);
 
       const [url, key] = await invoke<[string, string]>("get_sync_config");
-      if (url && url.trim().length > 0 && key && key.trim().length > 0) {
+      if (url && url.trim().length > 0) {
         setApiUrl(url);
-        setApiKey(key);
+        setApiKey(key || "");
         setIsActivated(true);
       } else {
-        setApiUrl(url || "http://localhost:8000");
+        setApiUrl(url || "http://localhost:8081");
         setApiKey(key || "");
         setIsActivated(false);
       }
@@ -488,6 +542,9 @@ function App() {
       if (activeSess) {
         setSession(activeSess);
       }
+
+      const hasPin = await invoke<boolean>("has_offline_pin").catch(() => false);
+      setHasOfflinePin(hasPin);
 
       await loadTodayStatsAndHistory();
     } catch (err) {
@@ -517,50 +574,87 @@ function App() {
 
   async function handleManualLogin(e: React.FormEvent) {
     e.preventDefault();
-    if (!manualToken.trim()) return;
-    try {
-      let token = manualToken.trim();
-      let nama = "Admin";
-      let role = "admin";
+    const input = manualToken.trim();
+    if (!input) return;
 
-      if (token.startsWith("partisipasi-sekolah://")) {
-        const urlStr = token.replace("partisipasi-sekolah://", "http://");
-        const url = new URL(urlStr);
-        token = url.searchParams.get("token") || token;
-        nama = decodeURIComponent(url.searchParams.get("nama") || nama);
-        role = url.searchParams.get("role") || role;
+    // Jika berupa 6 digit angka OTP (contoh: 482910 atau 482 910)
+    const cleanCode = input.replace(/\s+|-/g, "");
+    if (/^\d{6}$/.test(cleanCode)) {
+      try {
+        const sess = await invoke<UserSession>("login_with_pairing_code", { code: cleanCode });
+        setSession(sess);
+        setManualToken("");
+        await loadTodayStatsAndHistory();
+      } catch (err) {
+        alert("Gagal masuk dengan kode: " + err);
       }
+      return;
+    }
 
-      const sess = await invoke<UserSession>("save_session", { token, nama, role });
-      setSession(sess);
-      setManualToken("");
-      alert("Login berhasil!");
+    // Fallback: Jika pengguna menempelkan format deep link URL
+    await processDeepLinkUrl(input);
+    setManualToken("");
+  }
+
+  async function handleOfflinePinLogin(e: React.FormEvent) {
+    e.preventDefault();
+    const pin = offlinePinInput.trim();
+    if (pin.length !== 6) {
+      alert("PIN harus berupa 6 digit angka.");
+      return;
+    }
+    try {
+      const sess = await invoke<UserSession | null>("verify_offline_pin", { pin });
+      if (sess) {
+        setSession(sess);
+        setOfflinePinInput("");
+        setShowPinLogin(false);
+      } else {
+        alert("PIN Kasir tidak cocok. Silakan coba lagi.");
+      }
     } catch (err) {
-      alert("Gagal melakukan login manual: " + err);
+      alert("Gagal verifikasi PIN: " + err);
+    }
+  }
+
+  async function handleSaveNewPin(e: React.FormEvent) {
+    e.preventDefault();
+    const pin = newPinInput.trim();
+    if (pin.length !== 6 || !/^\d+$/.test(pin)) {
+      alert("PIN harus berupa 6 digit angka!");
+      return;
+    }
+    try {
+      await invoke("set_offline_pin", { pin });
+      setHasOfflinePin(true);
+      setShowSetPinModal(false);
+      setNewPinInput("");
+      alert("PIN Kasir Offline berhasil disimpan!");
+    } catch (err) {
+      alert("Gagal menyimpan PIN: " + err);
     }
   }
 
   async function handleActivate(e: React.FormEvent) {
     e.preventDefault();
-    if (!apiUrl.trim() || !apiKey.trim()) {
-      alert("Mohon isi URL Endpoint dan API Key!");
+    if (!apiUrl.trim()) {
+      alert("Mohon masukkan alamat peladen web sekolah!");
       return;
     }
 
     setIsTestingConnection(true);
 
     try {
-      // 1. Test connection to server with provided API URL and API Key
-      await invoke("test_sync_connection", { apiUrl: apiUrl.trim(), apiKey: apiKey.trim() });
+      // 1. Uji sambungan ke peladen web sekolah
+      const msg = await invoke<string>("test_sync_connection", { apiUrl: apiUrl.trim(), apiKey: apiKey.trim() });
       
-      // 2. If test successful, save configurations
+      // 2. Simpan konfigurasi alamat peladen
       await invoke("set_sync_config", { apiUrl: apiUrl.trim(), apiKey: apiKey.trim() });
-      setApiKey(apiKey.trim());
       setIsActivated(true);
       setIsEditingActivation(false);
-      alert("Koneksi berhasil terhubung! Silakan masuk via SSO.");
+      alert("Berhasil terhubung ke peladen web!\n" + msg);
     } catch (err) {
-      alert("Gagal terhubung ke server:\n" + err);
+      alert("Gagal terhubung ke peladen web:\n" + err);
     } finally {
       setIsTestingConnection(false);
     }
@@ -677,7 +771,7 @@ function App() {
         setPrintReceiptData(receipt);
         setShowReceiptModal(true);
       } catch (err) {
-        console.error("Gagal memuat kwitansi otomatis:", err);
+        console.error("Gagal memuat kuitansi otomatis:", err);
       }
     } catch (err) {
       alert("Gagal memproses pembayaran: " + err);
@@ -693,7 +787,7 @@ function App() {
       setPrintReceiptData(receipt);
       setShowReceiptModal(true);
     } catch (err) {
-      alert("Gagal memuat data kwitansi: " + err);
+      alert("Gagal memuat data kuitansi: " + err);
     }
   }
 
@@ -726,8 +820,8 @@ function App() {
   async function saveConfig(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await invoke("set_sync_config", { apiUrl, apiKey });
-      alert("Pengaturan sinkronisasi berhasil disimpan.");
+      await invoke("set_sync_config", { apiUrl: apiUrl.trim(), apiKey: apiKey || "" });
+      alert("Alamat peladen web berhasil disimpan.");
     } catch (err) {
       alert("Gagal menyimpan pengaturan: " + err);
     }
@@ -777,11 +871,11 @@ function App() {
     setIsTestingOnboardConn(true);
     setOnboardingConnMsg("");
     try {
-      const result = await invoke<string>("test_sync_connection", { apiUrl, apiKey });
+      const result = await invoke<string>("test_sync_connection", { apiUrl, apiKey: apiKey || "" });
       setOnboardingConnMsg("✅ " + result);
       setOnboardingConnTested(true);
     } catch (err) {
-      setOnboardingConnMsg("❌ Koneksi gagal: " + err);
+      setOnboardingConnMsg("❌ Sambungan gagal: " + err);
       setOnboardingConnTested(false);
     } finally {
       setIsTestingOnboardConn(false);
@@ -790,16 +884,15 @@ function App() {
 
   async function handleOnboardingFinish() {
     try {
-      await invoke("set_sync_config", { apiUrl, apiKey });
+      await invoke("set_sync_config", { apiUrl, apiKey: apiKey || "" });
       setIsActivated(true);
       setIsFreshInstall(false);
-      // Langsung sync dari server untuk mendapatkan data & aset sekolah
-      try {
-        await invoke("trigger_sync");
-        // Download logo kop kwitansi dan simpan sebagai base64 lokal
-        await invoke<string>("download_school_assets").catch(() => {});
-      } catch (_) {
-        // Sync gagal saat onboarding tidak fatal, bisa sync manual nanti
+      // Sinkronkan aset sekolah jika apiKey telah tersedia
+      if (apiKey) {
+        try {
+          await invoke("trigger_sync");
+          await invoke<string>("download_school_assets").catch(() => {});
+        } catch (_) {}
       }
       await loadInitialConfig();
     } catch (err) {
@@ -823,8 +916,8 @@ function App() {
   if (isFreshInstall) {
     const steps = [
       { num: 1, title: "Selamat Datang", desc: "Pengenalan Sistem" },
-      { num: 2, title: "Koneksi Server", desc: "API Endpoint & Key" },
-      { num: 3, title: "Aktivasi & Enkripsi", desc: "Setup Selesai" }
+      { num: 2, title: "Sambungan Peladen", desc: "Alamat Web Sekolah" },
+      { num: 3, title: "Aktivasi & Enkripsi", desc: "Penyiapan Selesai" }
     ];
 
     const progressWidth = onboardingStep === 1 ? "33%" : onboardingStep === 2 ? "66%" : "100%";
@@ -960,33 +1053,22 @@ function App() {
               </div>
             )}
 
-            {/* ── Step 2: Server Config ── */}
+            {/* ── Step 2: Sambungan Peladen Sekolah ── */}
             {onboardingStep === 2 && (
               <div className="onboarding-step-pane">
                 <div className="pane-hero compact">
-                  <h2>Konfigurasi Server API</h2>
-                  <p>Masukkan API Server URL dan API Key terminal kasir yang terdaftar di panel admin online.</p>
+                  <h2>Sambungan Peladen Web</h2>
+                  <p>Masukkan alamat situs web sekolah Anda. Kunci otorisasi terminal kasir akan disinkronkan secara otomatis saat Anda masuk.</p>
                 </div>
 
                 <div className="form-group mb-3">
-                  <label className="form-label font-bold">API Server Online URL (Endpoint)</label>
+                  <label className="form-label font-bold">Alamat Web Sekolah (Endpoint)</label>
                   <input
                     type="text"
                     className="form-control"
                     value={apiUrl}
                     onChange={(e) => { setApiUrl(e.target.value); setOnboardingConnTested(false); setOnboardingConnMsg(""); }}
-                    placeholder="https://partisipasi.sch.id"
-                  />
-                </div>
-
-                <div className="form-group mb-3">
-                  <label className="form-label font-bold">API Key Terminal</label>
-                  <input
-                    type="password"
-                    className="form-control"
-                    value={apiKey}
-                    onChange={(e) => { setApiKey(e.target.value); setOnboardingConnTested(false); setOnboardingConnMsg(""); }}
-                    placeholder="psk_xxxxxxxxxxxxxxxxxxxxxxxx"
+                    placeholder="https://spp.sekolah.sch.id atau http://localhost:8081"
                   />
                 </div>
 
@@ -1005,18 +1087,18 @@ function App() {
                     ← Kembali
                   </button>
 
-                  <button className="btn-secondary" onClick={handleOnboardingTestConn} disabled={isTestingOnboardConn || !apiUrl || !apiKey}>
-                    {isTestingOnboardConn ? "Menguji..." : "🔗 Uji Koneksi"}
+                  <button className="btn-secondary" onClick={handleOnboardingTestConn} disabled={isTestingOnboardConn || !apiUrl.trim()}>
+                    {isTestingOnboardConn ? "Menguji..." : "🔗 Uji Sambungan"}
                   </button>
 
-                  <button className="btn-primary" onClick={() => setOnboardingStep(3)} disabled={!apiUrl || !apiKey} style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                  <button className="btn-primary" onClick={() => setOnboardingStep(3)} disabled={!apiUrl.trim()} style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
                     <span>Lanjut</span>
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>
                     </svg>
                   </button>
                 </div>
-                <p className="login-hint mt-3 text-center">*Dapatkan API Key dari menu Pengaturan API pada admin web.</p>
+                <p className="login-hint mt-3 text-center">*Alamat peladen dapat diubah sewaktu-waktu melalui tombol pengaturan pada layar masuk.</p>
               </div>
             )}
 
@@ -1074,28 +1156,31 @@ function App() {
     );
   }
 
-  // ── Edit Activation (sudah pernah setup, ingin ganti server) ────────────────
+  // ── Ubah Sambungan Peladen (sudah pernah penyiapan, ingin ganti peladen) ────
   if (!isActivated || isEditingActivation) {
     return (
       <div className="login-screen-container">
         <div className="login-card">
           <div className="login-header">
             <span className="login-icon"><ActivationIcon /></span>
-            <h2>Ubah Konfigurasi Server</h2>
-            <p>Perbarui koneksi API terminal POS kasir lokal Anda.</p>
+            <h2>Ubah Sambungan Peladen</h2>
+            <p>Perbarui alamat web peladen sekolah untuk terminal kasir ini.</p>
           </div>
           <form onSubmit={handleActivate} className="login-body mt-4">
             <div className="form-group">
-              <label>API Server Online URL (Endpoint)</label>
-              <input type="text" className="form-control" value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} placeholder="https://partisipasi.sch.id" required />
-            </div>
-            <div className="form-group mt-3">
-              <label>API Key Terminal</label>
-              <input type="password" className="form-control" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="Masukkan API Key terminal Anda..." required />
+              <label>Alamat Web Sekolah (Endpoint)</label>
+              <input
+                type="text"
+                className="form-control"
+                value={apiUrl}
+                onChange={(e) => setApiUrl(e.target.value)}
+                placeholder="https://spp.sekolah.sch.id atau http://localhost:8081"
+                required
+              />
             </div>
             <button type="submit" className="btn-primary mt-4" style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "8px" }} disabled={isTestingConnection}>
               <PlugIcon size={16} />
-              {isTestingConnection ? "Mengetes Koneksi..." : "Simpan & Hubungkan"}
+              {isTestingConnection ? "Menguji Sambungan..." : "Simpan & Hubungkan"}
             </button>
             {isActivated && (
               <button type="button" className="btn-secondary mt-2" style={{ width: "100%" }} onClick={() => setIsEditingActivation(false)}>
@@ -1103,7 +1188,7 @@ function App() {
               </button>
             )}
           </form>
-          <p className="login-hint mt-3">*Dapatkan API URL dan API Key terminal kasir Anda dari panel administrasi server online Partisipasi Sekolah (Pengaturan → API).</p>
+          <p className="login-hint mt-3">*Kunci otorisasi terminal kasir akan disinkronkan secara otomatis oleh peladen saat Anda masuk.</p>
         </div>
       </div>
     );
@@ -1123,36 +1208,88 @@ function App() {
             </div>
           </div>
           <div className="login-body mt-4">
-            <button className="btn-primary" onClick={openLogin} style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
-              <GlobeIcon /> Login via Browser SSO
-            </button>
-            <p className="login-hint mt-2 text-center">
-              Membuka browser bawaan untuk masuk secara aman.
-            </p>
+            {showPinLogin ? (
+              <form onSubmit={handleOfflinePinLogin} className="mt-3">
+                <div className="form-group">
+                  <label>Masukkan PIN Kasir (6 Digit)</label>
+                  <input
+                    type="password"
+                    maxLength={6}
+                    className="form-control text-center"
+                    style={{ fontSize: "20px", letterSpacing: "8px", textAlign: "center" }}
+                    value={offlinePinInput}
+                    onChange={(e) => setOfflinePinInput(e.target.value)}
+                    placeholder="••••••"
+                    autoFocus
+                    required
+                  />
+                </div>
+                <button type="submit" className="btn-primary mt-3" style={{ width: "100%" }}>
+                  Masuk dengan PIN Kasir
+                </button>
+                <button 
+                  type="button" 
+                  className="btn-secondary mt-2" 
+                  style={{ width: "100%" }} 
+                  onClick={() => setShowPinLogin(false)}
+                >
+                  Kembali ke Masuk via Peramban
+                </button>
+              </form>
+            ) : (
+              <>
+                <button className="btn-primary" onClick={openLogin} style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "8px" }}>
+                  <GlobeIcon /> Masuk melalui Peramban (SSO)
+                </button>
+                <p className="login-hint mt-2 text-center">
+                  Membuka peramban untuk masuk secara aman.
+                </p>
 
-            <div className="login-divider mt-4">
-              <span>Atau masukkan data otorisasi secara manual</span>
-            </div>
+                {hasOfflinePin && (
+                  <button 
+                    type="button" 
+                    className="btn-secondary mt-3" 
+                    style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "8px" }}
+                    onClick={() => setShowPinLogin(true)}
+                  >
+                    Masuk dengan PIN Kasir (Mode Luar Jaringan)
+                  </button>
+                )}
 
-            <form onSubmit={handleManualLogin} className="mt-3">
-              <div className="form-group">
-                <label>Salin Link Otorisasi / Token</label>
-                <input
-                  type="text"
-                  className="form-control"
-                  value={manualToken}
-                  onChange={(e) => setManualToken(e.target.value)}
-                  placeholder="partisipasi-sekolah://auth?token=..."
-                  required
-                />
-              </div>
-              <button type="submit" className="btn-secondary mt-3" style={{ width: "100%" }}>
-                Masuk ke Aplikasi
-              </button>
-            </form>
-            <p className="login-hint mt-2" style={{ fontSize: "10px", color: "var(--text-muted)" }}>
-              *Klik kanan tombol "Buka Aplikasi Desktop" di browser, pilih "Copy Link Address", lalu tempelkan di kolom atas.
-            </p>
+                <div className="login-divider mt-4">
+                  <span>Atau masukkan Kode 6 Digit dari Peramban</span>
+                </div>
+
+                <form onSubmit={handleManualLogin} className="mt-3">
+                  <div className="form-group">
+                    <label style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Kode Otorisasi (6 Digit)</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={manualToken}
+                      onChange={(e) => setManualToken(e.target.value)}
+                      placeholder="Contoh: 482910"
+                      maxLength={100}
+                      style={{
+                        textAlign: "center",
+                        fontSize: "1.25rem",
+                        fontWeight: "700",
+                        letterSpacing: "4px",
+                        fontFamily: "monospace",
+                        borderColor: "#cbd5e1"
+                      }}
+                      required
+                    />
+                  </div>
+                  <button type="submit" className="btn-secondary mt-3" style={{ width: "100%", fontWeight: "600" }}>
+                    Masuk dengan Kode
+                  </button>
+                </form>
+                <p className="login-hint mt-2 text-center" style={{ fontSize: "11px", color: "var(--text-muted)" }}>
+                  Ketik 6 angka yang tertera pada peramban setelah masuk atau tempel tautan otorisasi.
+                </p>
+              </>
+            )}
 
             <div className="text-center mt-4" style={{ textAlign: "center" }}>
               <button 
@@ -1230,7 +1367,16 @@ function App() {
           <div className="user-profile mt-2" style={{ marginBottom: "16px" }}>
             <div className="user-name"><UserIcon />{session.nama}</div>
             <div className="user-role">{roleDisplay}</div>
-            <button className="logout-btn mt-2" onClick={handleLogout}>Keluar Sesi</button>
+            <div style={{ display: "flex", gap: "6px", marginTop: "8px" }}>
+              <button 
+                type="button" 
+                style={{ fontSize: "11px", color: "var(--primary)", background: "rgba(0,43,89,0.06)", border: "none", padding: "4px 8px", borderRadius: "4px", cursor: "pointer" }}
+                onClick={() => setShowSetPinModal(true)}
+              >
+                {hasOfflinePin ? "Ubah PIN" : "+ Set PIN Offline"}
+              </button>
+              <button className="logout-btn" onClick={handleLogout} style={{ marginTop: 0 }}>Keluar</button>
+            </div>
           </div>
           <div className="status-row">
             <span className={`dot ${isOnline ? "online" : "offline"}`}></span>
@@ -1350,13 +1496,40 @@ function App() {
                 backgroundColor: isOnline ? "var(--emerald)" : "var(--rose)",
                 display: "inline-block"
               }}></span>
-              {isOnline ? "Online" : "Offline"}
+              {isOnline ? "Daring" : "Luring"}
             </span>
+            {pendingSyncCount > 0 ? (
+              <span style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "5px",
+                backgroundColor: "rgba(176, 96, 0, 0.1)",
+                color: "var(--amber)",
+                border: "1px solid rgba(176, 96, 0, 0.25)",
+                padding: "3px 10px",
+                borderRadius: "14px",
+                fontSize: "11px",
+                fontWeight: "600"
+              }}>
+                ⏳ {pendingSyncCount} transaksi tertunda
+              </span>
+            ) : (
+              <span style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "4px",
+                fontSize: "11px",
+                color: "var(--emerald)",
+                fontWeight: "500"
+              }}>
+                ✓ Data sinkron
+              </span>
+            )}
             <span className="year-badge">
               T.A Aktif: {academicYearName ?? (academicYearId ? "..." : "Memuat...")}
             </span>
             <button className="sync-shortcut" onClick={runSync} disabled={isSyncing} style={{ display: "inline-flex", alignItems: "center", gap: "6px" }}>
-              <SyncIcon size={13} className={isSyncing ? "spinning" : ""} /> Sync
+              <SyncIcon size={13} className={isSyncing ? "spinning" : ""} /> Sinkronkan
             </button>
           </div>
         </header>
@@ -1656,7 +1829,7 @@ function App() {
                               disabled={isProcessingPayment}
                               style={{ width: "100%" }}
                             >
-                              {isProcessingPayment ? "Memproses..." : "Proses & Cetak Kwitansi"}
+                              {isProcessingPayment ? "Memproses..." : "Proses & Cetak Kuitansi"}
                             </button>
                           </form>
                         )}
@@ -1866,35 +2039,36 @@ function App() {
           {activeTab === "sync" && (
             <div className="sync-layout">
               <div className="sync-settings-card">
-                <h3>Konfigurasi Integrasi & Sync Engine</h3>
+                <h3>Konfigurasi Sambungan & Sinkronisasi</h3>
                 <form onSubmit={saveConfig} className="mt-3">
                   <div className="form-group">
-                    <label>URL API Server Online</label>
+                    <label>Alamat Web Peladen Utama (Endpoint)</label>
                     <input
                       type="url"
                       className="form-control"
                       value={apiUrl}
                       onChange={(e) => setApiUrl(e.target.value)}
-                      placeholder="http://nama-sekolah.sch.id"
+                      placeholder="http://localhost:8081 atau https://spp.sekolah.sch.id"
                       required
                     />
                   </div>
 
                   <div className="form-group mt-3">
-                    <label>X-API-Key</label>
-                    <input
-                      type="password"
-                      className="form-control"
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      placeholder="psk_live_..."
-                      required
-                    />
+                    <label>Status Otorisasi Terminal</label>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 14px", background: "rgba(0, 86, 145, 0.05)", borderRadius: "8px", border: "1px solid rgba(0, 86, 145, 0.15)", fontSize: "13px" }}>
+                      <span style={{ color: apiKey ? "var(--emerald, #10b981)" : "#b45309", fontWeight: "600", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                        {apiKey ? "✓ Terminal Terotorisasi Otomatis" : "⚠ Menunggu Otorisasi Masuk"}
+                      </span>
+                      <span style={{ fontSize: "11px", color: "var(--text-muted, #64748b)", fontWeight: "500" }}>Zero-Config</span>
+                    </div>
+                    <p className="login-hint mt-1" style={{ fontSize: "12px", color: "var(--text-muted, #64748b)" }}>
+                      Kunci otorisasi terminal dikelola secara otomatis oleh peladen pusat saat Anda masuk.
+                    </p>
                   </div>
 
                   <div className="button-group mt-4" style={{ display: "flex", gap: "10px" }}>
                     <button type="submit" className="btn-secondary" style={{ flex: 1 }}>
-                      Simpan Konfigurasi
+                      Simpan Sambungan
                     </button>
                     <button 
                       type="button" 
@@ -2238,10 +2412,10 @@ function App() {
                         <td>{idx + 1}</td>
                         <td>
                           {item.payment_type_name}
-                          {item.month_name ? ` — ${item.month_name}` : ""}
+                          {item.month_name ? ` - ${item.month_name}` : ""}
                           {item.academic_year_name ? ` (T.A ${item.academic_year_name})` : ""}
                         </td>
-                        <td className="amount-cell">{showNominal.receipt ? `Rp ${item.amount.toLocaleString("id-ID")}` : "—"}</td>
+                        <td className="amount-cell">{showNominal.receipt ? `Rp ${item.amount.toLocaleString("id-ID")}` : "-"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -2249,7 +2423,7 @@ function App() {
                     <tr className="receipt-total-row">
                       <td colSpan={2} style={{ textAlign: "right", fontWeight: "700" }}>Total</td>
                       <td className="amount-cell" style={{ fontWeight: "700" }}>
-                        {showNominal.receipt ? `Rp ${printReceiptData.total_amount.toLocaleString("id-ID")}` : "—"}
+                        {showNominal.receipt ? `Rp ${printReceiptData.total_amount.toLocaleString("id-ID")}` : "-"}
                       </td>
                     </tr>
                   </tfoot>
@@ -2278,7 +2452,7 @@ function App() {
                 </div>
 
                 <p style={{ textAlign: "center", fontSize: "9px", color: "#888", marginTop: "24px" }}>
-                  Dicetak pada {new Date().toLocaleString("id-ID")} — {schoolSettings.school_name || "Sistem Kasir"}
+                  Dicetak pada {new Date().toLocaleString("id-ID")} - {schoolSettings.school_name || "Sistem Kasir"}
                 </p>
               </div>
             </div>
@@ -2300,6 +2474,46 @@ function App() {
                 Cetak Kwitansi
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Set PIN Kasir Offline */}
+      {showSetPinModal && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
+          <div style={{ maxWidth: "380px", width: "90%", backgroundColor: "#fff", borderRadius: "12px", padding: "24px", boxShadow: "0 10px 25px rgba(0,0,0,0.2)" }}>
+            <h3 style={{ fontSize: "16px", fontWeight: "700", marginBottom: "8px", color: "var(--primary)" }}>Set PIN Kasir Offline</h3>
+            <p style={{ fontSize: "12px", color: "var(--text-muted)", marginBottom: "16px", lineHeight: 1.4 }}>
+              PIN ini digunakan untuk masuk ke aplikasi saat perangkat tidak terhubung ke jaringan internet (Mode Offline).
+            </p>
+            <form onSubmit={handleSaveNewPin}>
+              <div className="form-group">
+                <label style={{ fontSize: "12px", fontWeight: "600" }}>PIN 6 Digit Angka</label>
+                <input
+                  type="password"
+                  maxLength={6}
+                  className="form-control"
+                  style={{ textAlign: "center", fontSize: "20px", letterSpacing: "8px", marginTop: "6px" }}
+                  value={newPinInput}
+                  onChange={(e) => setNewPinInput(e.target.value)}
+                  placeholder="••••••"
+                  autoFocus
+                  required
+                />
+              </div>
+              <div style={{ display: "flex", gap: "8px", marginTop: "20px", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => { setShowSetPinModal(false); setNewPinInput(""); }}
+                >
+                  Batal
+                </button>
+                <button type="submit" className="btn-primary">
+                  Simpan PIN
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

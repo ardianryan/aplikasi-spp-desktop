@@ -1,6 +1,114 @@
 use rusqlite::Connection;
+use serde::{Serialize, Deserialize};
 use serde_json::Value;
 use std::collections::HashMap;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VerifiedUser {
+    pub id: String,
+    pub username: String,
+    pub nama: String,
+    pub email: String,
+    pub role: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct VerifyTokenResult {
+    pub user: VerifiedUser,
+    pub api_key: String,
+}
+
+pub async fn verify_token_with_server(
+    api_url: &str,
+    api_key: &str,
+    token: &str,
+) -> Result<VerifyTokenResult, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Gagal inisialisasi HTTP client: {}", e))?;
+
+    let url = format!("{}/api/v1/auth/verify-token", api_url.trim_end_matches('/'));
+
+    let mut req = client.post(&url)
+        .json(&serde_json::json!({ "token": token }));
+
+    if !api_key.trim().is_empty() {
+        req = req.header("X-API-Key", api_key.trim());
+    }
+
+    let res = req.send()
+        .await
+        .map_err(|e| format!("Gagal menghubungi peladen autentikasi: {}", e))?;
+
+    let status = res.status();
+    let body: Value = res.json().await.map_err(|e| format!("Respon server tidak valid: {}", e))?;
+
+    if !status.is_success() || !body["success"].as_bool().unwrap_or(false) {
+        let msg = body["message"].as_str().unwrap_or("Verifikasi token gagal");
+        return Err(msg.to_string());
+    }
+
+    let user_val = &body["user"];
+    let user: VerifiedUser = serde_json::from_value(user_val.clone())
+        .map_err(|e| format!("Format data profil tidak sesuai: {}", e))?;
+
+    let returned_api_key = body["api_key"].as_str().unwrap_or("").to_string();
+
+    Ok(VerifyTokenResult { user, api_key: returned_api_key })
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ExchangeCodeResult {
+    pub user: VerifiedUser,
+    pub token: String,
+    pub api_key: String,
+}
+
+pub async fn exchange_code_with_server(
+    api_url: &str,
+    api_key: &str,
+    code: &str,
+) -> Result<ExchangeCodeResult, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Gagal inisialisasi HTTP client: {}", e))?;
+
+    let url = format!("{}/api/v1/auth/exchange-code", api_url.trim_end_matches('/'));
+
+    let mut req = client.post(&url)
+        .json(&serde_json::json!({ "code": code.trim() }));
+
+    if !api_key.trim().is_empty() {
+        req = req.header("X-API-Key", api_key.trim());
+    }
+
+    let res = req.send()
+        .await
+        .map_err(|e| format!("Gagal menghubungi peladen autentikasi: {}", e))?;
+
+    let status = res.status();
+    let body: Value = res.json().await.map_err(|e| format!("Respon server tidak valid: {}", e))?;
+
+    if !status.is_success() || !body["success"].as_bool().unwrap_or(false) {
+        let msg = body["message"].as_str().unwrap_or("Verifikasi kode otorisasi gagal");
+        return Err(msg.to_string());
+    }
+
+    let user_val = &body["user"];
+    let user: VerifiedUser = serde_json::from_value(user_val.clone())
+        .map_err(|e| format!("Format data profil tidak sesuai: {}", e))?;
+
+    let token = body["token"].as_str().unwrap_or("").to_string();
+    if token.is_empty() {
+        return Err("Peladen tidak mengembalikan token autentikasi.".to_string());
+    }
+
+    let returned_api_key = body["api_key"].as_str().unwrap_or("").to_string();
+
+    Ok(ExchangeCodeResult { user, token, api_key: returned_api_key })
+}
 
 pub fn get_sync_settings(conn: &Connection) -> (String, String) {
     let api_url: String = conn.query_row(
@@ -206,6 +314,20 @@ pub fn apply_pull_payload(conn: &Connection, payload: &Value) -> Result<String, 
         }
     }
 
+    // Hapus record yang terhapus di server (tombstones)
+    if let Some(deleted_map) = payload.get("deleted").and_then(|v| v.as_object()) {
+        for (table_name, ids_val) in deleted_map {
+            if let Some(ids_arr) = ids_val.as_array() {
+                for id_val in ids_arr {
+                    if let Some(id_str) = id_val.as_str() {
+                        let del_query = format!("DELETE FROM `{}` WHERE id = ?;", table_name);
+                        let _ = conn.execute(&del_query, [id_str]);
+                    }
+                }
+            }
+        }
+    }
+
     // Simpan timestamp sinkronisasi terakhir
     if !sync_time.is_empty() {
         conn.execute(
@@ -253,7 +375,7 @@ pub async fn upload_push_payload(
     api_key: &str,
     payload_map: &HashMap<String, Vec<Value>>,
     total_pending: usize,
-) -> Result<(), String> {
+) -> Result<HashMap<String, Vec<String>>, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
@@ -281,19 +403,40 @@ pub async fn upload_push_payload(
         return Err(format!("Push gagal di server: {}", response_json["message"].as_str().unwrap_or("Unknown error")));
     }
 
-    Ok(())
+    let mut synced_ids_map = HashMap::new();
+    if let Some(synced_obj) = response_json.get("synced_ids").and_then(|v| v.as_object()) {
+        for (tbl, ids_val) in synced_obj {
+            if let Some(ids_arr) = ids_val.as_array() {
+                let ids: Vec<String> = ids_arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect();
+                synced_ids_map.insert(tbl.clone(), ids);
+            }
+        }
+    } else {
+        // Fallback jika server tidak mengembalikan synced_ids
+        for (table, records) in payload_map {
+            let ids: Vec<String> = records.iter()
+                .filter_map(|r| r.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
+                .collect();
+            synced_ids_map.insert(table.clone(), ids);
+        }
+    }
+
+    Ok(synced_ids_map)
 }
 
 // Fungsi sinkron untuk memperbarui status lokal record yang terunggah menjadi 'synced'
-pub fn mark_pushed_records_synced(conn: &Connection, payload_map: &HashMap<String, Vec<Value>>) -> Result<(), String> {
-    for (table, records) in payload_map {
-        for record in records {
-            if let Some(id_val) = record["id"].as_str() {
-                conn.execute(
-                    &format!("UPDATE `{}` SET sync_status = 'synced' WHERE id = ?;", table),
-                    [id_val],
-                ).map_err(|e| format!("Gagal meng-update sync_status untuk {} ID {}: {}", table, id_val, e))?;
-            }
+pub fn mark_pushed_records_synced(
+    conn: &Connection,
+    synced_ids_map: &HashMap<String, Vec<String>>,
+) -> Result<(), String> {
+    for (table, ids) in synced_ids_map {
+        for id_val in ids {
+            conn.execute(
+                &format!("UPDATE `{}` SET sync_status = 'synced' WHERE id = ?;", table),
+                [id_val],
+            ).map_err(|e| format!("Gagal meng-update sync_status untuk {} ID {}: {}", table, id_val, e))?;
         }
     }
     Ok(())
@@ -339,5 +482,28 @@ mod tests {
 
         let last_synced: String = conn.query_row("SELECT value FROM settings WHERE key = 'last_synced_at';", [], |r| r.get(0)).unwrap();
         assert_eq!(last_synced, "2026-08-05 13:47:00");
+    }
+
+    #[test]
+    fn test_apply_pull_payload_tombstones() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute("CREATE TABLE settings (id TEXT PRIMARY KEY, key TEXT UNIQUE, value TEXT);", []).unwrap();
+        conn.execute("CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, sync_status TEXT DEFAULT 'synced');", []).unwrap();
+        conn.execute("INSERT INTO users (id, name) VALUES ('usr-to-delete', 'Siswa Dihapus');", []).unwrap();
+
+        let payload = serde_json::json!({
+            "success": true,
+            "timestamp": "2026-08-05 14:00:00",
+            "data": {},
+            "deleted": {
+                "users": ["usr-to-delete"]
+            }
+        });
+
+        let result = apply_pull_payload(&conn, &payload);
+        assert!(result.is_ok());
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM users WHERE id = 'usr-to-delete';", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0, "Record yang tercantum di tombstones harus terhapus dari SQLite");
     }
 }

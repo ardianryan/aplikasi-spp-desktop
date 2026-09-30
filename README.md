@@ -16,12 +16,14 @@
 
 ## ⚡ Fitur Utama
 
-- 🔒 **Database Terenkripsi SQLCipher AES-256:** Basis data SQLite lokal dienkripsi penuh menggunakan algoritma AES-256 dengan KDF kunci yang diderivasi dari API Key unik terminal.
-- 📡 **Mesin Auto-Sync Offline-First (Pull & Push):** Mengunduh data master dari server pusat dan mengunggah transaksi kasir/tabungan lokal secara otomatis tanpa memblokir antarmuka pengguna.
-- 🖨️ **Cetak Kwitansi Offline dengan Kop Sekolah:** Aset logo sekolah dan stempel diunduh dan dikonversi menjadi *Base64 Data URL* secara lokal sehingga kwitansi dapat dicetak secara fisik tanpa koneksi internet.
-- 💰 **POS Kasir Cepat & Tabungan Siswa:** Antarmuka pembayaran SPP, uang gedung, partisipasi, serta modul simpanan/penarikan tabungan siswa dengan kalkulasi otomatis real-time.
-- 🔑 **Browser SSO Authentication via Deep-Link (`psk://`):** Alur login aman terintegrasi dengan browser utama sistem menggunakan skema custom URI untuk mencegah penyadapan kredensial.
-- 🧙 **3-Step Onboarding Wizard:** Panduan instalasi awal yang interaktif untuk konfigurasi server API, validasi otentikasi terminal, dan inisialisasi enkripsi basis data.
+- 🔒 **Basis Data Terenkripsi Penuh (SQLCipher AES-256):** Basis data SQLite lokal dienkripsi penuh menggunakan AES-256 dengan perlindungan *auto-recovery* otomatis untuk berkas tak terenkripsi.
+- 🚀 **Penyiapan Tanpa Konfigurasi Manual (*Endpoint-First Zero-Config*):** Pengguna cukup memasukkan alamat URL situs web sekolah. Kunci otorisasi terminal kasir disediakan dan disinkronkan secara otomatis oleh peladen pusat tanpa perlu menyalin *API Key*.
+- 🔑 **Autentikasi Cepat: Kode OTP 6-Digit & SSO Peramban (`psk://`):** Kasir dapat masuk instan menggunakan kode OTP 6-digit sekali pakai dari peramban atau melalui protokol *deep-link* aman.
+- 📡 **Mesin Sinkronisasi Dua Arah (*Offline-First Sync Engine*):** Mengunduh data master siswa/tagihan dan mengunggah transaksi kasir secara otomatis di latar belakang, dilengkapi deteksi pulihnya jaringan (*auto-sync on online*).
+- ⏳ **Pemantauan Antrean Transaksi Kasir (*Pending Sync Counter*):** Bilah atas kasir menampilkan lencana dinamis transaksi yang tersimpan secara lokal dan siap dikirim saat terhubung ke internet.
+- 🖨️ **Cetak Kuitansi Offline dengan Kop Sekolah:** Aset logo sekolah dan stempel diunduh dan disimpan sebagai *Base64 Data URL* lokal agar kuitansi fisik dapat langsung dicetak saat internet terputus.
+- 💰 **POS Kasir Cepat & Modul Tabungan Siswa:** Antarmuka pembayaran SPP, uang gedung, partisipasi, serta modul simpanan/penarikan tabungan siswa dengan kalkulasi otomatis real-time.
+- 🧙 **Wizard Penyiapan 3 Langkah (*Onboarding Wizard*):** Panduan instalasi awal interaktif dengan uji sambungan peladen instan dan inisialisasi enkripsi basis data.
 
 ---
 

@@ -8,6 +8,9 @@ pub struct DbState {
     pub conn: std::sync::Mutex<Connection>,
 }
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 /// Derive a stable SQLCipher passphrase from the stored API key.
 /// Falls back to a device-unique seed if API key is not yet set.
 fn load_cipher_key(db_path: &std::path::Path) -> String {
@@ -18,31 +21,24 @@ fn load_cipher_key(db_path: &std::path::Path) -> String {
         .unwrap_or_else(|| std::path::PathBuf::from(".cipher_seed"));
 
     if let Ok(key) = fs::read_to_string(&key_file) {
+        #[cfg(unix)]
+        {
+            let _ = fs::set_permissions(&key_file, fs::Permissions::from_mode(0o600));
+        }
         let trimmed = key.trim().to_string();
         if !trimmed.is_empty() {
             return trimmed;
         }
     }
 
-    // First run: generate a random seed, persist it
+    // First run: generate a random seed, persist it with restricted 0600 permissions
     let seed = format!("psk_{}", uuid::Uuid::new_v4().to_string().replace("-", ""));
     let _ = fs::write(&key_file, &seed);
-    seed
-}
-
-/// Update the cipher seed when the API key is saved for the first time.
-pub fn update_cipher_seed(app_handle: &AppHandle, api_key: &str) {
-    if let Ok(dir) = app_handle.path().app_data_dir() {
-        let key_file = dir.join(".cipher_seed");
-        // Derive key = first 40 chars of api_key (already high-entropy)
-        let derived = if api_key.len() >= 20 {
-            api_key[..api_key.len().min(64)].to_string()
-        } else {
-            // pad with existing seed if api key too short
-            api_key.to_string()
-        };
-        let _ = fs::write(key_file, derived);
+    #[cfg(unix)]
+    {
+        let _ = fs::set_permissions(&key_file, fs::Permissions::from_mode(0o600));
     }
+    seed
 }
 
 pub fn init_db(app_handle: &AppHandle) -> Result<Connection, String> {
@@ -67,11 +63,13 @@ pub fn init_db(app_handle: &AppHandle) -> Result<Connection, String> {
     conn.execute_batch(&format!("PRAGMA key = '{}';", cipher_key.replace("'", "''")))
         .map_err(|e| format!("Gagal mengaktifkan SQLCipher key: {}", e))?;
         
-    // Enable foreign keys and test read access
-    if let Err(e) = conn.execute("PRAGMA foreign_keys = ON;", []) {
+    // Test read access by querying schema (forces SQLCipher to decrypt page 1).
+    // PRAGMA foreign_keys alone does not touch disk pages.
+    let test_read = conn.query_row("SELECT count(*) FROM sqlite_master;", [], |_| Ok(()));
+    if let Err(e) = test_read {
         let err_str = e.to_string();
         if err_str.contains("file is not a database") || err_str.contains("NOTADB") {
-            println!("DB lama tidak terenkripsi atau corrupt. Membuat ulang database terenkripsi baru...");
+            println!("DB lama tidak terenkripsi, salah passphrase, atau corrupt. Membuat ulang database terenkripsi baru...");
             drop(conn);
             let _ = fs::remove_file(&db_path);
             
@@ -83,8 +81,11 @@ pub fn init_db(app_handle: &AppHandle) -> Result<Connection, String> {
                 .map_err(|e| format!("Gagal mengaktifkan PRAGMA foreign_keys: {}", e))?;
             return Ok(conn_new);
         }
-        return Err(format!("Gagal mengaktifkan PRAGMA foreign_keys: {}", e));
+        return Err(format!("Gagal memverifikasi akses database SQLCipher: {}", e));
     }
+
+    conn.execute("PRAGMA foreign_keys = ON;", [])
+        .map_err(|e| format!("Gagal mengaktifkan PRAGMA foreign_keys: {}", e))?;
         
     Ok(conn)
 }
@@ -425,5 +426,21 @@ mod tests {
         // Verifikasi tabel _migrations terisi
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM _migrations;", [], |r| r.get(0)).unwrap();
         assert!(count > 0, "Tabel _migrations harus mencatat migrasi");
+    }
+
+    #[test]
+    fn test_cipher_key_stability() {
+        let temp_dir = std::env::temp_dir().join(format!("test_cipher_{}", uuid::Uuid::new_v4()));
+        let _ = fs::create_dir_all(&temp_dir);
+        let db_path = temp_dir.join("test.db");
+
+        let key1 = load_cipher_key(&db_path);
+        assert!(!key1.is_empty());
+        assert!(key1.starts_with("psk_"));
+
+        let key2 = load_cipher_key(&db_path);
+        assert_eq!(key1, key2, "Kunci cipher harus stabil dan tidak berubah antar pemanggilan");
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 }

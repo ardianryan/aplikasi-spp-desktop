@@ -7,6 +7,8 @@ use std::sync::Mutex;
 use tauri::{Manager, Emitter};
 use tauri_plugin_deep_link::DeepLinkExt;
 
+pub struct PendingDeepLink(pub Mutex<Option<String>>);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -26,11 +28,17 @@ pub fn run() {
                 conn: Mutex::new(conn),
             });
 
-            // 4. Setup Deep Link Listener (Opsi A)
+            // 4. Daftarkan State untuk Deep Link pending (mencegah cold-start race condition)
+            app.manage(PendingDeepLink(Mutex::new(None)));
+
+            // 5. Setup Deep Link Listener
             let handle = app.handle().clone();
             app.deep_link().on_open_url(move |event| {
                 if let Some(url) = event.urls().first() {
                     let url_str = url.to_string();
+                    if let Some(state) = handle.try_state::<PendingDeepLink>() {
+                        *state.0.lock().unwrap() = Some(url_str.clone());
+                    }
                     let _ = handle.emit("desktop-login-success", url_str);
                 }
             });
@@ -39,6 +47,9 @@ pub fn run() {
             if let Ok(Some(urls)) = app.deep_link().get_current() {
                 if let Some(url) = urls.first() {
                     let url_str = url.to_string();
+                    if let Some(state) = app.try_state::<PendingDeepLink>() {
+                        *state.0.lock().unwrap() = Some(url_str.clone());
+                    }
                     let _ = app.emit("desktop-login-success", url_str);
                 }
             }
@@ -66,7 +77,13 @@ pub fn run() {
             commands::get_all_payment_history,
             commands::get_local_reports,
             commands::is_fresh_install,
-            commands::download_school_assets
+            commands::download_school_assets,
+            commands::get_pending_deep_link,
+            commands::set_offline_pin,
+            commands::verify_offline_pin,
+            commands::has_offline_pin,
+            commands::login_with_pairing_code,
+            commands::get_pending_sync_count
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
