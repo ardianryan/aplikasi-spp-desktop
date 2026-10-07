@@ -29,4 +29,8 @@ pub static MIGRATIONS: &[(&str, &str)] = &[
     ("026_increase_avatar_length.sql", include_str!("../migrations_bundle/026_increase_avatar_length.sql")),
     ("027_add_tanggal_lahir_to_students.sql", include_str!("../migrations_bundle/027_add_tanggal_lahir_to_students.sql")),
     ("028_create_user_tokens.sql", include_str!("../migrations_bundle/028_create_user_tokens.sql")),
+    ("029_create_sync_tombstones.sql", include_str!("../migrations_bundle/029_create_sync_tombstones.sql")),
+    ("030_create_desktop_pairing_codes.sql", include_str!("../migrations_bundle/030_create_desktop_pairing_codes.sql")),
+    ("031_create_api_rate_limits.sql", include_str!("../migrations_bundle/031_create_api_rate_limits.sql")),
+    ("032_add_applied_months_to_reliefs.sql", include_str!("../migrations_bundle/032_add_applied_months_to_reliefs.sql")),
 ];
