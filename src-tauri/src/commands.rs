@@ -42,6 +42,12 @@ pub struct BillSummary {
     pub total_tunggakan: f64,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct InstallmentItem {
+    pub amount: f64,
+    pub date: String,
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct PaymentAssignment {
     pub id: String,
@@ -56,6 +62,7 @@ pub struct PaymentAssignment {
     pub status: String, // lunas / belum_lunas / cicilan
     pub academic_year_id: Option<String>,
     pub academic_year_name: Option<String>,
+    pub installments: Vec<InstallmentItem>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -187,7 +194,35 @@ pub fn get_student_details(student_id: String, state: State<'_, DbState>) -> Res
         }
     ).map_err(|e| format!("Siswa tidak ditemukan: {}", e))?;
     
-    // b. Tagihan / Assignments
+    // b. Ambil riwayat cicilan (installments) dari payment_details untuk siswa bersangkutan
+    let mut installments_map: std::collections::HashMap<String, Vec<InstallmentItem>> = std::collections::HashMap::new();
+    if let Ok(mut inst_stmt) = conn.prepare(
+        "SELECT pd.payment_assignment_id, pd.amount, pd.created_at
+         FROM payment_details pd
+         JOIN payment_assignments pa ON pd.payment_assignment_id = pa.id
+         WHERE pa.student_id = ?
+         ORDER BY pd.created_at ASC;"
+    ) {
+        if let Ok(rows) = inst_stmt.query_map([&student_id], |row| {
+            let aid: String = row.get(0)?;
+            let amt: f64 = row.get(1)?;
+            let raw_date: Option<String> = row.get(2)?;
+            let date = raw_date.map(|d| {
+                if let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&d, "%Y-%m-%d %H:%M:%S") {
+                    ndt.format("%d/%m/%Y %H:%M").to_string()
+                } else {
+                    d
+                }
+            }).unwrap_or_else(|| "-".to_string());
+            Ok((aid, InstallmentItem { amount: amt, date }))
+        }) {
+            for r in rows.flatten() {
+                installments_map.entry(r.0).or_default().push(r.1);
+            }
+        }
+    }
+
+    // c. Tagihan / Assignments
     let mut stmt = conn.prepare(
         "SELECT a.id, t.name, t.type, a.month, a.amount, a.paid_amount, a.relief_amount, a.status, a.academic_year_id, y.name as academic_year_name
          FROM payment_assignments a
@@ -225,6 +260,7 @@ pub fn get_student_details(student_id: String, state: State<'_, DbState>) -> Res
         });
         
         let remaining_amount = amount - paid_amount - relief_amount;
+        let inst_list = installments_map.remove(&id).unwrap_or_default();
         
         Ok(PaymentAssignment {
             id,
@@ -239,6 +275,7 @@ pub fn get_student_details(student_id: String, state: State<'_, DbState>) -> Res
             status,
             academic_year_id,
             academic_year_name,
+            installments: inst_list,
         })
     }).map_err(|e| format!("Tagihan fetch error: {}", e))?;
     

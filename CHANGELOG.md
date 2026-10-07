@@ -14,7 +14,8 @@ Format dokumen ini mengacu pada [Keep a Changelog](https://keepachangelog.com/en
 - **Indikator & Pemantauan Antrean Sinkronisasi Kasir:** Penambahan perintah `get_pending_sync_count` dan lencana dinamis pada bilah atas antarmuka kasir (`✓ Data sinkron` vs `⏳ X transaksi tertunda`).
 - **Sinkronisasi Otomatis saat Jaringan Pulih (*Network Online Listener*):** Penambahan pendengar kejadian `window.addEventListener('online')` yang secara otomatis memicu sinkronisasi latar belakang saat internet kembali tersambung.
 - **Aksesibilitas Keyboard Modal (Standar R-32):** Seluruh jendela dialog/modal (kuitansi, pengaturan PIN kasir, ubah sambungan) kini dapat ditutup dengan tombol keyboard `Escape`.
-- **Pemulihan Otomatis Berkas Basis Data Lama (*Auto-Recovery*):** Mekanisme deteksi otomatis jika ditemukan berkas database SQLite lama tanpa enkripsi atau rusak, sehingga sistem langsung meregenerasi berkas terenkripsi SQLCipher baru tanpa terjadi galat *crash/panic*.
+- **Rincian Riwayat Cicilan Tagihan Bebas:** Menampilkan riwayat pembayaran bertahap (cicilan) pada pos tagihan bebas di tabel kasir desktop dengan tombol pengalih (*accordion toggle*) `Riwayat Cicilan (Nx)`, menampilkan urutan pembayaran, tanggal/waktu transaksi, dan nominal cicilan secara rinci.
+- **Sinkronisasi Bundel Migrasi Database:** Penyertaan migrasi basis data `029` hingga `032` (termasuk dukungan rincian potongan dan relasi cicilan) ke dalam bundel migrasi klien desktop.
 
 ### 🔄 Diubah (Changed)
 - **Pembersihan Antarmuka Pengguna (Anti-Slop UI Hygiene):** Menghapus seluruh kolom isian *API Key* / *X-API-Key* dari wizard penyiapan awal (Langkah 2), modal ubah sambungan, dan tab pengaturan kasir ("Sync & Koneksi").

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -26,6 +26,11 @@ interface BillSummary {
   total_tunggakan: number;
 }
 
+interface InstallmentItem {
+  amount: number;
+  date: string;
+}
+
 interface PaymentAssignment {
   id: string;
   payment_type_name: string;
@@ -39,6 +44,7 @@ interface PaymentAssignment {
   status: string;
   academic_year_id?: string;
   academic_year_name?: string;
+  installments?: InstallmentItem[];
 }
 
 interface PaymentHistory {
@@ -314,6 +320,16 @@ function App() {
   // Today Cashier stats and history
   const [todayStats, setTodayStats] = useState({ today_total: 0, monthly_total: 0, today_count: 0 });
   const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
+
+  // Installment accordion state per assignment
+  const [expandedInstallments, setExpandedInstallments] = useState<Record<string, boolean>>({});
+
+  function toggleInstallment(assignmentId: string) {
+    setExpandedInstallments(prev => ({
+      ...prev,
+      [assignmentId]: !prev[assignmentId]
+    }));
+  }
 
   async function loadTodayStatsAndHistory() {
     try {
@@ -1713,36 +1729,103 @@ function App() {
                                       </tr>
                                     </thead>
                                     <tbody>
-                                      {group.items.map((a) => (
-                                        <tr key={a.id}>
-                                          <td><strong>{a.payment_type_name}</strong></td>
-                                          <td>{a.month_name || "-"}</td>
-                                          {showNominal.portal && <td>Rp {a.amount.toLocaleString("id-ID")}</td>}
-                                          {showNominal.portal && <td className="text-blue">Rp {a.relief_amount.toLocaleString("id-ID")}</td>}
-                                          {showNominal.portal && <td className="text-emerald">Rp {a.paid_amount.toLocaleString("id-ID")}</td>}
-                                          {showNominal.portal && <td><strong>Rp {a.remaining_amount.toLocaleString("id-ID")}</strong></td>}
-                                          <td>
-                                            <span className={`status-badge ${a.status}`}>
-                                              {a.status.replace("_", " ")}
-                                            </span>
-                                          </td>
-                                          <td>
-                                            {a.remaining_amount > 0 ? (
-                                              <input
-                                                type="number"
-                                                min="0"
-                                                max={a.remaining_amount}
-                                                placeholder="0"
-                                                className="table-input"
-                                                value={cart.find(item => item.assignmentId === a.id)?.payAmount || ""}
-                                                onChange={(e) => handleCartChange(a, parseFloat(e.target.value) || 0)}
-                                              />
-                                            ) : (
-                                              <span className="text-muted">Lunas</span>
+                                      {group.items.map((a) => {
+                                        const hasInstallments = Array.isArray(a.installments) && a.installments.length > 0;
+                                        const isInstExpanded = Boolean(expandedInstallments[a.id]);
+
+                                        return (
+                                          <React.Fragment key={a.id}>
+                                            <tr>
+                                              <td>
+                                                <div><strong>{a.payment_type_name}</strong></div>
+                                                {hasInstallments && (
+                                                  <div
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      toggleInstallment(a.id);
+                                                    }}
+                                                    style={{
+                                                      display: "inline-flex",
+                                                      alignItems: "center",
+                                                      gap: "4px",
+                                                      marginTop: "4px",
+                                                      padding: "2px 8px",
+                                                      borderRadius: "6px",
+                                                      background: "rgba(0, 86, 145, 0.08)",
+                                                      color: "var(--primary, #005691)",
+                                                      fontSize: "11px",
+                                                      fontWeight: "600",
+                                                      cursor: "pointer",
+                                                      userSelect: "none",
+                                                      transition: "all 0.15s ease"
+                                                    }}
+                                                    title="Klik untuk melihat rincian riwayat cicilan"
+                                                  >
+                                                    <span style={{ fontSize: "9px" }}>{isInstExpanded ? "▲" : "▼"}</span>
+                                                    <span>Riwayat Cicilan ({a.installments!.length}x)</span>
+                                                  </div>
+                                                )}
+                                              </td>
+                                              <td>{a.month_name || "-"}</td>
+                                              {showNominal.portal && <td>Rp {a.amount.toLocaleString("id-ID")}</td>}
+                                              {showNominal.portal && <td className="text-blue">Rp {a.relief_amount.toLocaleString("id-ID")}</td>}
+                                              {showNominal.portal && <td className="text-emerald">Rp {a.paid_amount.toLocaleString("id-ID")}</td>}
+                                              {showNominal.portal && <td><strong>Rp {a.remaining_amount.toLocaleString("id-ID")}</strong></td>}
+                                              <td>
+                                                <span className={`status-badge ${a.status}`}>
+                                                  {a.status.replace("_", " ")}
+                                                </span>
+                                              </td>
+                                              <td>
+                                                {a.remaining_amount > 0 ? (
+                                                  <input
+                                                    type="number"
+                                                    min="0"
+                                                    max={a.remaining_amount}
+                                                    placeholder="0"
+                                                    className="table-input"
+                                                    value={cart.find(item => item.assignmentId === a.id)?.payAmount || ""}
+                                                    onChange={(e) => handleCartChange(a, parseFloat(e.target.value) || 0)}
+                                                  />
+                                                ) : (
+                                                  <span className="text-muted">Lunas</span>
+                                                )}
+                                              </td>
+                                            </tr>
+                                            {hasInstallments && isInstExpanded && (
+                                              <tr style={{ background: "rgba(0, 86, 145, 0.02)" }}>
+                                                <td colSpan={showNominal.portal ? 8 : 4} style={{ padding: "4px 16px 10px 16px" }}>
+                                                  <div style={{
+                                                    background: "#ffffff",
+                                                    border: "1px solid rgba(0, 86, 145, 0.18)",
+                                                    borderRadius: "8px",
+                                                    padding: "10px 14px",
+                                                    display: "inline-flex",
+                                                    flexDirection: "column",
+                                                    gap: "6px",
+                                                    minWidth: "320px",
+                                                    boxShadow: "0 2px 6px rgba(0, 0, 0, 0.04)"
+                                                  }}>
+                                                    <div style={{ fontSize: "11px", fontWeight: "700", color: "var(--primary, #005691)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                                                      Rincian Riwayat Cicilan:
+                                                    </div>
+                                                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                                                      {a.installments!.map((inst, idx) => (
+                                                        <div key={idx} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px" }}>
+                                                          <span style={{ fontWeight: "600", minWidth: "42px", color: "var(--text-muted, #64748b)" }}>Ke-{idx + 1}:</span>
+                                                          <span style={{ color: "var(--text-secondary, #475569)" }}>{inst.date}</span>
+                                                          <span style={{ color: "#cbd5e1" }}>•</span>
+                                                          <span style={{ fontWeight: "600", color: "var(--text-primary, #0f172a)" }}>Rp {inst.amount.toLocaleString("id-ID")}</span>
+                                                        </div>
+                                                      ))}
+                                                    </div>
+                                                  </div>
+                                                </td>
+                                              </tr>
                                             )}
-                                          </td>
-                                        </tr>
-                                      ))}
+                                          </React.Fragment>
+                                        );
+                                      })}
                                     </tbody>
                                   </table>
                                 </div>
