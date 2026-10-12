@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
 import "./App.css";
 
 interface UserSession {
@@ -317,6 +318,9 @@ function App() {
   const [showSetPinModal, setShowSetPinModal] = useState(false);
   const [newPinInput, setNewPinInput] = useState("");
 
+  // Autostart & Failover Engine State
+  const [autostartActive, setAutostartActive] = useState<boolean>(false);
+
   // Today Cashier stats and history
   const [todayStats, setTodayStats] = useState({ today_total: 0, monthly_total: 0, today_count: 0 });
   const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
@@ -433,6 +437,33 @@ function App() {
     }
   }, [studentDetails]);
 
+  async function ensureAutostartOnLogin() {
+    try {
+      const enabled = await isAutostartEnabled();
+      if (!enabled) {
+        await enableAutostart();
+        setAutostartActive(true);
+        console.log("Autostart diaktifkan otomatis saat kasir login.");
+      }
+    } catch (err) {
+      console.warn("Gagal mengaktifkan autostart saat login:", err);
+    }
+  }
+
+  async function handleToggleAutostart() {
+    try {
+      if (autostartActive) {
+        await disableAutostart();
+        setAutostartActive(false);
+      } else {
+        await enableAutostart();
+        setAutostartActive(true);
+      }
+    } catch (err: any) {
+      alert("Gagal mengubah pengaturan autostart: " + (err?.message || err));
+    }
+  }
+
   async function processDeepLinkUrl(urlStr: string) {
     console.log("Deep link payload received:", urlStr);
     try {
@@ -449,6 +480,7 @@ function App() {
       if (token) {
         const sess = await invoke<UserSession>("save_session", { token, nama, role });
         setSession(sess);
+        await ensureAutostartOnLogin();
       }
     } catch (err: any) {
       console.error("Gagal memproses SSO Deep Link:", err);
@@ -476,8 +508,23 @@ function App() {
       }
     });
 
+    // 3. Listen to Background Sync Daemon events dari Rust
+    const unlistenBgSync = listen<string>("background-sync-success", (event) => {
+      setLastSyncTime(new Date().toLocaleString("id-ID"));
+      if (event.payload) {
+        setSyncStatusMsg(event.payload);
+      }
+      loadTodayStatsAndHistory();
+    });
+
+    // 4. Periksa status autostart sistem operasi
+    isAutostartEnabled()
+      .then((enabled) => setAutostartActive(enabled))
+      .catch((err) => console.warn("Gagal mengecek status autostart:", err));
+
     return () => {
       unlisten.then((f) => f());
+      unlistenBgSync.then((f) => f());
     };
   }, []);
 
@@ -600,6 +647,7 @@ function App() {
         const sess = await invoke<UserSession>("login_with_pairing_code", { code: cleanCode });
         setSession(sess);
         setManualToken("");
+        await ensureAutostartOnLogin();
         await loadTodayStatsAndHistory();
       } catch (err) {
         alert("Gagal masuk dengan kode: " + err);
@@ -625,6 +673,7 @@ function App() {
         setSession(sess);
         setOfflinePinInput("");
         setShowPinLogin(false);
+        await ensureAutostartOnLogin();
       } else {
         alert("PIN Kasir tidak cocok. Silakan coba lagi.");
       }
@@ -2147,6 +2196,26 @@ function App() {
                     <p className="login-hint mt-1" style={{ fontSize: "12px", color: "var(--text-muted, #64748b)" }}>
                       Kunci otorisasi terminal dikelola secara otomatis oleh peladen pusat saat Anda masuk.
                     </p>
+                  </div>
+
+                  <div className="form-group mt-3">
+                    <label>Failover & Layanan Latar Belakang (System Tray)</label>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: "rgba(0, 86, 145, 0.05)", borderRadius: "8px", border: "1px solid rgba(0, 86, 145, 0.15)", fontSize: "13px" }}>
+                      <div>
+                        <div style={{ fontWeight: 600, color: "var(--text-main)" }}>Mulai Otomatis Saat Komputer Dinyalakan (Autostart)</div>
+                        <div style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>
+                          Aplikasi berjalan di System Tray dan otomatis sinkronisasi di latar belakang sebagai failover saat server/internet pulih.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleToggleAutostart}
+                        className={`btn ${autostartActive ? "btn-primary" : "btn-secondary"}`}
+                        style={{ padding: "6px 14px", fontSize: "12px", minWidth: "100px", fontWeight: 600 }}
+                      >
+                        {autostartActive ? "✓ Aktif" : "Nonaktif"}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="button-group mt-4" style={{ display: "flex", gap: "10px" }}>

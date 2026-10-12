@@ -15,7 +15,10 @@ Format dokumen ini mengacu pada [Keep a Changelog](https://keepachangelog.com/en
 - **Sinkronisasi Otomatis saat Jaringan Pulih (*Network Online Listener*):** Penambahan pendengar kejadian `window.addEventListener('online')` yang secara otomatis memicu sinkronisasi latar belakang saat internet kembali tersambung.
 - **Aksesibilitas Keyboard Modal (Standar R-32):** Seluruh jendela dialog/modal (kuitansi, pengaturan PIN kasir, ubah sambungan) kini dapat ditutup dengan tombol keyboard `Escape`.
 - **Rincian Riwayat Cicilan Tagihan Bebas:** Menampilkan riwayat pembayaran bertahap (cicilan) pada pos tagihan bebas di tabel kasir desktop dengan tombol pengalih (*accordion toggle*) `Riwayat Cicilan (Nx)`, menampilkan urutan pembayaran, tanggal/waktu transaksi, dan nominal cicilan secara rinci.
-- **Sinkronisasi Bundel Migrasi Database:** Penyertaan migrasi basis data `029` hingga `032` (termasuk dukungan rincian potongan dan relasi cicilan) ke dalam bundel migrasi klien desktop.
+- **Dukungan Ikon Baki Sistem (*System Tray*) & Mode Latar Belakang (Failover Daemon):** Menambahkan baki sistem (*tray icon*) ala Warp Tunnel / Tailscale dengan menu klik-kanan ("Buka Partisipasi Sekolah", "Sinkronkan Sekarang", dan "Keluar").
+- **Tutup-ke-Baki (*Minimize to System Tray*):** Tombol tutup jendela `[X]` kini otomatis menyembunyikan jendela ke baki sistem tanpa mematikan proses, memastikan mesin sinkronisasi terus berjalan.
+- **Autostart saat Komputer Dinyalakan:** Integrasi `@tauri-apps/plugin-autostart` yang secara otomatis mengaktifkan peluncuran otomatis aplikasi saat kasir berhasil masuk, lengkap dengan sakelar manual di tab Pengaturan Sambungan & Sinkronisasi.
+- **Pekerja Sinkronisasi Otomatis Latar Belakang (*Background Auto-Sync Worker*):** Proses daemon di *runtime* Rust yang berjalan berkala setiap 30 detik untuk melakukan *pull* tagihan dan *push* transaksi kasir tertunda secara hening, menjamin kesiapan basis data lokal sebagai *failover* saat peladen atau jaringan internet terputus mendadak.
 
 ### 🔄 Diubah (Changed)
 - **Pembersihan Antarmuka Pengguna (Anti-Slop UI Hygiene):** Menghapus seluruh kolom isian *API Key* / *X-API-Key* dari wizard penyiapan awal (Langkah 2), modal ubah sambungan, dan tab pengaturan kasir ("Sync & Koneksi").

@@ -622,11 +622,10 @@ pub fn is_fresh_install(state: State<'_, DbState>) -> Result<bool, String> {
     Ok(api_url.trim().is_empty())
 }
 
-#[tauri::command]
-pub async fn trigger_sync(state: State<'_, DbState>) -> Result<String, String> {
+pub async fn perform_sync(db_state: &DbState) -> Result<String, String> {
     // 1. Ambil pengaturan sync & last_synced_at (lock sesingkat mungkin)
     let (api_url, api_key, last_synced_at) = {
-        let conn = state.conn.lock().unwrap();
+        let conn = db_state.conn.lock().unwrap();
         let (url, key) = get_sync_settings(&conn);
         let last_synced: String = conn.query_row(
             "SELECT value FROM settings WHERE key = 'last_synced_at';",
@@ -645,7 +644,7 @@ pub async fn trigger_sync(state: State<'_, DbState>) -> Result<String, String> {
     
     // 3. Simpan data PULL ke SQLite (Lock database secara sinkron menggunakan transaksi)
     let sync_time = {
-        let mut conn = state.conn.lock().unwrap();
+        let mut conn = db_state.conn.lock().unwrap();
         // Matikan sementara foreign key check untuk bulk insert lintas-tabel
         conn.execute("PRAGMA foreign_keys = OFF;", []).map_err(|e| format!("Gagal menonaktifkan foreign keys: {}", e))?;
         
@@ -664,7 +663,7 @@ pub async fn trigger_sync(state: State<'_, DbState>) -> Result<String, String> {
     
     // 4. Tahap PUSH: Baca transaksi pending dari SQLite (Lock database)
     let (pending_payload, total_pending) = {
-        let conn = state.conn.lock().unwrap();
+        let conn = db_state.conn.lock().unwrap();
         get_all_pending_records(&conn)?
     };
     
@@ -676,13 +675,18 @@ pub async fn trigger_sync(state: State<'_, DbState>) -> Result<String, String> {
         
         // 6. Tandai record yang terkonfirmasi sukses sebagai synced di SQLite (Lock database)
         {
-            let conn = state.conn.lock().unwrap();
+            let conn = db_state.conn.lock().unwrap();
             mark_pushed_records_synced(&conn, &synced_ids)?;
         }
         push_result = format!("Berhasil mensinkronkan {} dari {} transaksi lokal ke server.", total_synced, total_pending);
     }
     
     Ok(format!("Pull Sukses (Timestamp Server: {}). {}", sync_time, push_result))
+}
+
+#[tauri::command]
+pub async fn trigger_sync(state: State<'_, DbState>) -> Result<String, String> {
+    perform_sync(&state).await
 }
 
 // 6. Ambil Tahun Akademik Aktif
