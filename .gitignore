@@ -25,3 +25,8 @@ dist-ssr
 
 # Agents skills & local AI config
 .agents/
+
+# Tauri updater private keys
+*.key
+*.key.pub
+updater.key*

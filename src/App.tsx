@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
+import { check as checkUpdate } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import "./App.css";
 
 interface UserSession {
@@ -321,6 +323,10 @@ function App() {
   // Autostart & Failover Engine State
   const [autostartActive, setAutostartActive] = useState<boolean>(false);
 
+  // Auto-Update State (Silent background install ala Antigravity IDE)
+  const [updateReady, setUpdateReady] = useState<{ version: string; body?: string } | null>(null);
+  const [isRestartingForUpdate, setIsRestartingForUpdate] = useState<boolean>(false);
+
   // Today Cashier stats and history
   const [todayStats, setTodayStats] = useState({ today_total: 0, monthly_total: 0, today_count: 0 });
   const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
@@ -464,6 +470,37 @@ function App() {
     }
   }
 
+  async function checkForUpdatesSilently() {
+    if (!navigator.onLine) return;
+    try {
+      console.log("Memeriksa pembaruan di latar belakang...");
+      const update = await checkUpdate();
+      if (update) {
+        console.log(`Versi baru terdeteksi: v${update.version}. Mengunduh di latar belakang...`);
+        // Silent background download & stage installation
+        await update.downloadAndInstall();
+        console.log(`Pembaruan v${update.version} berhasil diunduh dan siap diterapkan saat restart.`);
+        setUpdateReady({
+          version: update.version,
+          body: update.body || undefined
+        });
+      }
+    } catch (err) {
+      // Hening jika gagal memeriksa pembaruan (offline / rate-limit / no release yet)
+      console.warn("Pemeriksaan auto-update hening:", err);
+    }
+  }
+
+  async function handleApplyUpdate() {
+    try {
+      setIsRestartingForUpdate(true);
+      await relaunch();
+    } catch (err: any) {
+      setIsRestartingForUpdate(false);
+      alert("Gagal memulai ulang aplikasi: " + (err?.message || err));
+    }
+  }
+
   async function processDeepLinkUrl(urlStr: string) {
     console.log("Deep link payload received:", urlStr);
     try {
@@ -522,7 +559,19 @@ function App() {
       .then((enabled) => setAutostartActive(enabled))
       .catch((err) => console.warn("Gagal mengecek status autostart:", err));
 
+    // 5. Cek pembaruan hening saat aplikasi startup (setelah 5 detik jeda awal)
+    const updateTimeout = setTimeout(() => {
+      checkForUpdatesSilently();
+    }, 5000);
+
+    // 6. Cek pembaruan berkala setiap 1 jam di latar belakang
+    const updateInterval = setInterval(() => {
+      checkForUpdatesSilently();
+    }, 3600000);
+
     return () => {
+      clearTimeout(updateTimeout);
+      clearInterval(updateInterval);
       unlisten.then((f) => f());
       unlistenBgSync.then((f) => f());
     };
@@ -2666,6 +2715,99 @@ function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Auto-Update Notification Banner (ala Antigravity IDE / VS Code) */}
+      {updateReady && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: "24px",
+            right: "24px",
+            maxWidth: "380px",
+            width: "calc(100% - 48px)",
+            backgroundColor: "#ffffff",
+            borderRadius: "14px",
+            padding: "16px 20px",
+            boxShadow: "0 12px 32px rgba(0, 43, 89, 0.18), 0 4px 12px rgba(0, 0, 0, 0.08)",
+            border: "1px solid rgba(0, 86, 145, 0.2)",
+            zIndex: 10000,
+            display: "flex",
+            flexDirection: "column",
+            gap: "12px",
+            animation: "slideInUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)"
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+            <div
+              style={{
+                width: "36px",
+                height: "36px",
+                borderRadius: "10px",
+                backgroundColor: "rgba(0, 143, 93, 0.12)",
+                color: "var(--emerald, #008f5d)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "18px",
+                flexShrink: 0
+              }}
+            >
+              🚀
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--text-main, #0f172a)" }}>
+                Pembaruan Siap Dipasang!
+              </div>
+              <div style={{ fontSize: "12px", color: "var(--text-muted, #475569)", marginTop: "2px", lineHeight: 1.4 }}>
+                Versi <strong>v{updateReady.version}</strong> telah selesai diunduh di latar belakang. Mulai ulang aplikasi untuk langsung membuka pembaruan terbaru.
+              </div>
+            </div>
+            <button
+              onClick={() => setUpdateReady(null)}
+              style={{
+                background: "none",
+                border: "none",
+                fontSize: "16px",
+                cursor: "pointer",
+                color: "#94a3b8",
+                padding: "2px 4px",
+                lineHeight: 1
+              }}
+              title="Tutup pemberitahuan"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "4px" }}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setUpdateReady(null)}
+              style={{ padding: "6px 12px", fontSize: "12px" }}
+            >
+              Nanti Saja
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={isRestartingForUpdate}
+              onClick={handleApplyUpdate}
+              style={{
+                padding: "6px 14px",
+                fontSize: "12px",
+                fontWeight: "600",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                backgroundColor: "var(--primary, #002b59)"
+              }}
+            >
+              {isRestartingForUpdate ? "Memulai Ulang..." : "Mulai Ulang Sekarang"}
+            </button>
           </div>
         </div>
       )}

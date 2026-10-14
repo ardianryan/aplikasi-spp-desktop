@@ -32,6 +32,8 @@ chrono = { version = "0.4", features = ["serde"] }
 urlencoding = "2.1"
 sha2 = "0.10"
 tauri-plugin-autostart = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 
 

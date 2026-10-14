@@ -50,6 +50,12 @@
           "partisipasi-sekolah"
         ]
       }
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERGMUMwMEVGNjNCNkQ5RDEKUldUUjJiWmo3d0FjM3dXSCtzQkFsM2JZbFd3RlZHQVZ0TVNrT0RqZmRibHlqSHA3SVdFdXd1VDkK",
+      "endpoints": [
+        "https://github.com/ardianryan/aplikasi-spp-desktop/releases/latest/download/latest.json"
+      ]
     }
   }
 }
