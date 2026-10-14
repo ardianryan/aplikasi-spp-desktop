@@ -176,11 +176,27 @@ fn upsert_json_record(conn: &Connection, table_name: &str, record: &Value) -> Re
         }
     }
 
+    // Ambil daftar kolom yang benar-benar ada pada tabel lokal SQLite
+    let mut table_columns = std::collections::HashSet::new();
+    if let Ok(mut stmt) = conn.prepare(&format!("PRAGMA table_info({});", table_name)) {
+        if let Ok(mut rows) = stmt.query([]) {
+            while let Ok(Some(row)) = rows.next() {
+                let name: String = row.get(1).unwrap_or_default();
+                table_columns.insert(name);
+            }
+        }
+    }
+
     let mut columns = Vec::new();
     let mut place_holders = Vec::new();
     let mut values: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
 
     for (k, v) in obj {
+        // Lewati kolom payload dari server jika kolom tersebut belum ada di skema lokal SQLite
+        if !table_columns.is_empty() && !table_columns.contains(k) {
+            continue;
+        }
+
         columns.push(format!("`{}`", k));
         place_holders.push("?".to_string());
 

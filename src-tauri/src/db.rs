@@ -399,6 +399,24 @@ pub fn run_migrations(conn: &Connection) -> Result<(), String> {
         }
     }
 
+    // Post-migration: Pastikan kolom applied_months ada pada tabel reliefs (kompatibilitas migrasi 032)
+    let mut reliefs_stmt = conn.prepare("PRAGMA table_info(reliefs);")
+        .map_err(|e| format!("Gagal pragma info reliefs: {}", e))?;
+    let mut reliefs_rows = reliefs_stmt.query([])
+        .map_err(|e| format!("Gagal query pragma reliefs: {}", e))?;
+    let mut applied_months_exists = false;
+    while let Some(row) = reliefs_rows.next().map_err(|e| format!("Gagal fetch pragma reliefs: {}", e))? {
+        let col_name: String = row.get(1).unwrap_or_default();
+        if col_name == "applied_months" {
+            applied_months_exists = true;
+            break;
+        }
+    }
+    if !applied_months_exists {
+        println!("Adding applied_months to table: reliefs");
+        let _ = conn.execute("ALTER TABLE reliefs ADD COLUMN applied_months VARCHAR(255) NULL;", []);
+    }
+
     Ok(())
 }
 
