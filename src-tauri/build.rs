@@ -68,5 +68,8 @@ fn main() {
     fs::write("src/migrations.rs", code).unwrap();
     println!("cargo:warning=Generated src/migrations.rs with {} migration files.", sql_files.len());
 
+    #[cfg(target_os = "windows")]
+    println!("cargo:rustc-link-lib=user32");
+
     tauri_build::build();
 }
