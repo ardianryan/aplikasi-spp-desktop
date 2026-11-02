@@ -15,75 +15,86 @@ export component Header inherits Rectangle {
     callback trigger-sync-clicked();
 
     HorizontalLayout {
-        padding-left: 24px;
-        padding-right: 24px;
+        padding-left: 20px;
+        padding-right: 20px;
         spacing: 16px;
         alignment: space-between;
 
-        // Search Student Bar (480px wide)
+        // Search Bar (Input Siswa)
         Rectangle {
-            width: 480px;
-            height: 42px;
+            horizontal-stretch: 1;
+            max-width: 520px;
+            height: 40px;
             background: Theme.bg-primary;
             border-color: Theme.border;
             border-width: 1px;
             border-radius: 8px;
 
             HorizontalLayout {
-                padding-left: 14px;
-                padding-right: 14px;
+                padding-left: 12px;
+                padding-right: 12px;
                 spacing: 10px;
                 alignment: center;
 
-                Text {
-                    text: "🔍";
-                    font-size: 14px;
-                    vertical-alignment: center;
+                Image {
+                    source: @image-url("../assets/icons/search.svg");
+                    width: 16px;
+                    height: 16px;
+                    image-fit: contain;
+                    colorize: Theme.text-muted;
                 }
 
-                input := TextInput {
-                    text <=> root.search-query;
-                    font-size: 13px;
-                    color: Theme.text-main;
-                    vertical-alignment: center;
+                Rectangle {
                     horizontal-stretch: 1;
-                    edited => {
-                        root.search-changed(self.text);
-                    }
-                    accepted => {
-                        root.search-submitted(self.text);
-                    }
-                }
+                    height: 38px;
 
-                if root.search-query == "": Text {
-                    text: "Ketik Nama atau NIS/NISN Siswa...";
-                    font-size: 13px;
-                    color: Theme.text-muted;
-                    vertical-alignment: center;
+                    if root.search-query == "": Text {
+                        x: 0px;
+                        text: "Cari Siswa berdasarkan Nama atau NIS/NISN...";
+                        color: Theme.text-muted;
+                        font-size: 13px;
+                        vertical-alignment: center;
+                    }
+
+                    TextInput {
+                        width: 100%;
+                        height: 100%;
+                        text <=> root.search-query;
+                        font-size: 13px;
+                        color: Theme.text-main;
+                        vertical-alignment: center;
+                        edited => {
+                            root.search-changed(self.text);
+                        }
+                        accepted => {
+                            root.search-submitted(self.text);
+                        }
+                    }
                 }
             }
         }
 
-        // Right side indicators & action
+        // Action & Status di sebelah kanan
         HorizontalLayout {
-            spacing: 12px;
+            spacing: 10px;
             alignment: end;
 
-            // Academic Year Badge
+            // Badge Tahun Ajaran
             Rectangle {
-                height: 36px;
+                height: 38px;
                 background: Theme.bg-secondary;
                 border-color: Theme.border;
                 border-width: 1px;
                 border-radius: 6px;
                 HorizontalLayout {
-                    padding-left: 12px;
-                    padding-right: 12px;
+                    padding-left: 14px;
+                    padding-right: 14px;
                     spacing: 6px;
                     alignment: center;
                     Text {
-                        text: "📅 TA:";
+                        text: "T.A:";
                         font-size: 12px;
+                        font-weight: 500;
                         color: Theme.text-muted;
                         vertical-alignment: center;
                     }
@@ -97,24 +108,29 @@ export component Header inherits Rectangle {
                 }
             }
 
-            // Quick Sync Button
+            // Tombol Sinkronisasi
             Rectangle {
-                width: 140px;
-                height: 36px;
-                background: root.is-syncing ? #e0e0e0 : Theme.primary;
+                min-width: 130px;
+                height: 38px;
+                background: root.is-syncing ? #94a3b8 : Theme.primary;
                 border-radius: 6px;
 
                 HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
                     alignment: center;
-                    spacing: 6px;
-                    Text {
-                        text: root.is-syncing ? "⏳" : "🔄";
-                        font-size: 12px;
-                        vertical-alignment: center;
+                    spacing: 8px;
+
+                    Image {
+                        source: @image-url("../assets/icons/sync.svg");
+                        width: 14px;
+                        height: 14px;
+                        image-fit: contain;
                     }
+
                     Text {
-                        text: root.is-syncing ? "Sinkronisasi..." : "Sinkronkan";
-                        color: root.is-syncing ? Theme.text-muted : white;
+                        text: root.is-syncing ? "Sinkron..." : "Sinkronkan";
+                        color: white;
                         font-size: 12px;
                         font-weight: 600;
                         vertical-alignment: center;

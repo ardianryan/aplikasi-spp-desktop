@@ -24,26 +24,41 @@ export component SavingsView inherits Rectangle {
     callback withdraw-clicked(string, string);
 
     VerticalLayout {
-        padding: 20px;
-        spacing: 16px;
+        padding: 16px;
+        spacing: 14px;
 
-        Text {
-            text: "Tabungan Siswa";
-            font-size: 20px;
-            font-weight: 700;
-            color: Theme.text-main;
+        HorizontalLayout {
+            height: 28px;
+            spacing: 8px;
+            alignment: start;
+            Image {
+                source: @image-url("../assets/icons/savings.svg");
+                width: 18px;
+                height: 18px;
+                image-fit: contain;
+                colorize: Theme.emerald;
+                y: 5px;
+            }
+            Text {
+                text: "Tabungan Siswa";
+                font-size: 18px;
+                font-weight: 700;
+                color: Theme.text-main;
+                vertical-alignment: center;
+            }
         }
 
         // Kartu Saldo Tabungan
         Rectangle {
-            height: 100px;
+            height: 90px;
             background: Theme.bg-card;
             border-color: Theme.border;
             border-width: 1px;
-            border-radius: 10px;
+            border-radius: 8px;
 
             HorizontalLayout {
-                padding: 20px;
+                padding-left: 20px;
+                padding-right: 20px;
                 alignment: space-between;
 
                 VerticalLayout {
@@ -52,10 +67,11 @@ export component SavingsView inherits Rectangle {
                     Text {
                         text: "Siswa: " + root.student-name + " (" + root.student-class + ")";
                         font-size: 14px;
-                        color: Theme.text-muted;
+                        font-weight: 600;
+                        color: Theme.text-main;
                     }
                     Text {
-                        text: "Saldo Tersimpan";
+                        text: "Saldo Tersimpan Saat Ini";
                         font-size: 12px;
                         color: Theme.text-muted;
                     }
@@ -63,7 +79,7 @@ export component SavingsView inherits Rectangle {
 
                 Text {
                     text: root.current-balance;
-                    font-size: 28px;
+                    font-size: 26px;
                     font-weight: 800;
                     color: Theme.emerald;
                     vertical-alignment: center;
@@ -71,32 +87,32 @@ export component SavingsView inherits Rectangle {
             }
         }
 
-        // Form Setor & Tarik
+        // Form Setor & Tarik Tunai
         Rectangle {
-            height: 140px;
+            height: 120px;
             background: Theme.bg-card;
             border-color: Theme.border;
             border-width: 1px;
-            border-radius: 10px;
+            border-radius: 8px;
 
             VerticalLayout {
-                padding: 16px;
-                spacing: 12px;
+                padding: 14px;
+                spacing: 10px;
 
                 Text {
                     text: "Form Transaksi Tabungan";
-                    font-size: 14px;
+                    font-size: 13px;
                     font-weight: 700;
                     color: Theme.text-main;
                 }
 
                 HorizontalLayout {
-                    spacing: 12px;
+                    spacing: 10px;
 
                     // Input Nominal
                     Rectangle {
                         horizontal-stretch: 1;
-                        height: 40px;
+                        height: 38px;
                         background: Theme.bg-primary;
                         border-color: Theme.border;
                         border-width: 1px;
@@ -116,7 +132,7 @@ export component SavingsView inherits Rectangle {
                     // Input Catatan
                     Rectangle {
                         horizontal-stretch: 1;
-                        height: 40px;
+                        height: 38px;
                         background: Theme.bg-primary;
                         border-color: Theme.border;
                         border-width: 1px;
@@ -135,8 +151,8 @@ export component SavingsView inherits Rectangle {
 
                     // Tombol Setor
                     Rectangle {
-                        width: 120px;
-                        height: 40px;
+                        width: 110px;
+                        height: 38px;
                         background: Theme.emerald;
                         border-radius: 6px;
                         TouchArea {
@@ -147,7 +163,7 @@ export component SavingsView inherits Rectangle {
                         Text {
                             text: "+ Setor";
                             color: white;
-                            font-size: 13px;
+                            font-size: 12px;
                             font-weight: 700;
                             horizontal-alignment: center;
                             vertical-alignment: center;
@@ -156,8 +172,8 @@ export component SavingsView inherits Rectangle {
 
                     // Tombol Tarik
                     Rectangle {
-                        width: 120px;
-                        height: 40px;
+                        width: 110px;
+                        height: 38px;
                         background: Theme.rose;
                         border-radius: 6px;
                         TouchArea {
@@ -168,7 +184,7 @@ export component SavingsView inherits Rectangle {
                         Text {
                             text: "- Tarik Tunai";
                             color: white;
-                            font-size: 13px;
+                            font-size: 12px;
                             font-weight: 700;
                             horizontal-alignment: center;
                             vertical-alignment: center;
@@ -178,33 +194,46 @@ export component SavingsView inherits Rectangle {
             }
         }
 
-        // Tabel Riwayat Tabungan
+        // Tabel Mutasi Tabungan
         Rectangle {
             vertical-stretch: 1;
             background: Theme.bg-card;
             border-color: Theme.border;
             border-width: 1px;
-            border-radius: 10px;
+            border-radius: 8px;
 
             VerticalLayout {
-                padding: 16px;
+                padding: 14px;
                 spacing: 10px;
 
                 Text {
                     text: "Mutasi Tabungan Terakhir";
-                    font-size: 14px;
+                    font-size: 13px;
                     font-weight: 700;
                     color: Theme.text-main;
                 }
 
-                Flickable {
+                if root.history.length == 0: Rectangle {
+                    vertical-stretch: 1;
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: "Belum ada riwayat transaksi tabungan untuk siswa ini.";
+                            font-size: 12px;
+                            color: Theme.text-muted;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                if root.history.length > 0: Flickable {
                     vertical-stretch: 1;
                     VerticalLayout {
-                        spacing: 6px;
+                        spacing: 4px;
                         for mut in root.history: Rectangle {
-                            height: 38px;
+                            height: 36px;
                             background: Theme.bg-secondary;
-                            border-radius: 6px;
+                            border-radius: 4px;
 
                             HorizontalLayout {
                                 padding-left: 12px;
@@ -212,7 +241,7 @@ export component SavingsView inherits Rectangle {
                                 alignment: space-between;
 
                                 Text {
-                                    text: mut.transaction-type == "deposit" ? "📥 Setor" : "📤 Tarik";
+                                    text: mut.transaction-type == "deposit" ? "Setor" : "Tarik";
                                     color: mut.transaction-type == "deposit" ? Theme.emerald : Theme.rose;
                                     font-size: 12px;
                                     font-weight: 700;

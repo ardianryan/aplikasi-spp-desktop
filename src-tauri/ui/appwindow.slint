@@ -202,31 +202,33 @@ export component AppWindow inherits Window {
 
                 // Search Results Dropdown Popup (bila ada hasil search)
                 if root.show-search-results: Rectangle {
-                    x: 24px;
-                    y: 10px;
-                    width: 480px;
+                    x: 20px;
+                    y: 6px;
+                    width: 500px;
                     height: 280px;
                     background: Theme.bg-card;
-                    border-color: Theme.primary;
-                    border-width: 2px;
+                    border-color: Theme.border;
+                    border-width: 1px;
                     border-radius: 8px;
                     drop-shadow-blur: 16px;
-                    drop-shadow-color: #00000025;
+                    drop-shadow-color: #00000020;
 
                     VerticalLayout {
                         padding: 10px;
                         spacing: 6px;
 
                         HorizontalLayout {
+                            padding-left: 6px;
+                            padding-right: 6px;
                             alignment: space-between;
                             Text {
                                 text: "Hasil Pencarian Siswa:";
-                                font-size: 12px;
+                                font-size: 11px;
                                 font-weight: 700;
                                 color: Theme.text-muted;
                             }
                             Text {
-                                text: "Pilih siswa di bawah";
+                                text: "Klik untuk memilih siswa";
                                 font-size: 11px;
                                 color: Theme.primary;
                             }
@@ -239,8 +241,8 @@ export component AppWindow inherits Window {
                             VerticalLayout {
                                 spacing: 4px;
                                 for res in root.search-results: Rectangle {
-                                    height: 48px;
-                                    background: touch-res.has-hover ? Theme.primary-light : Theme.bg-secondary;
+                                    height: 44px;
+                                    background: touch-res.has-hover ? #f1f5f9 : Theme.bg-secondary;
                                     border-radius: 6px;
 
                                     HorizontalLayout {
@@ -251,7 +253,7 @@ export component AppWindow inherits Window {
 
                                         VerticalLayout {
                                             alignment: center;
-                                            spacing: 2px;
+                                            spacing: 1px;
                                             horizontal-stretch: 1;
                                             Text {
                                                 text: res.nama;
@@ -267,8 +269,8 @@ export component AppWindow inherits Window {
                                         }
 
                                         Text {
-                                            text: "Pilih ➔";
-                                            font-size: 12px;
+                                            text: "Pilih";
+                                            font-size: 11px;
                                             font-weight: 700;
                                             color: Theme.primary;
                                             vertical-alignment: center;

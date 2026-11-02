@@ -21,17 +21,30 @@ export component ReportsView inherits Rectangle {
     callback refresh-reports();
 
     VerticalLayout {
-        padding: 20px;
-        spacing: 16px;
+        padding: 16px;
+        spacing: 14px;
 
         HorizontalLayout {
+            height: 36px;
             alignment: space-between;
-            Text {
-                text: "Laporan Penerimaan Kas SPP";
-                font-size: 20px;
-                font-weight: 700;
-                color: Theme.text-main;
-                vertical-alignment: center;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Image {
+                    source: @image-url("../assets/icons/reports.svg");
+                    width: 18px;
+                    height: 18px;
+                    image-fit: contain;
+                    colorize: Theme.primary;
+                    y: 9px;
+                }
+                Text {
+                    text: "Laporan Penerimaan Kas SPP";
+                    font-size: 18px;
+                    font-weight: 700;
+                    color: Theme.text-main;
+                    vertical-alignment: center;
+                }
             }
 
             Rectangle {
@@ -43,77 +56,86 @@ export component ReportsView inherits Rectangle {
                     clicked => { root.refresh-reports(); }
                     mouse-cursor: pointer;
                 }
-                Text {
-                    text: "🔄 Muat Ulang";
-                    color: white;
-                    font-size: 12px;
-                    font-weight: 600;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 6px;
+                    Image {
+                        source: @image-url("../assets/icons/sync.svg");
+                        width: 12px;
+                        height: 12px;
+                        image-fit: contain;
+                    }
+                    Text {
+                        text: "Muat Ulang";
+                        color: white;
+                        font-size: 12px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
                 }
             }
         }
 
-        // Summary 4 Metrics
+        // Summary 4 Metrics (No Emoji)
         HorizontalLayout {
-            spacing: 14px;
+            spacing: 12px;
             Rectangle {
                 horizontal-stretch: 1;
-                height: 80px;
+                height: 76px;
                 background: Theme.bg-card;
                 border-color: Theme.border;
                 border-width: 1px;
                 border-radius: 8px;
                 VerticalLayout {
-                    padding: 14px;
-                    spacing: 4px;
-                    Text { text: "Total Semua Metode"; font-size: 12px; color: Theme.text-muted; }
-                    Text { text: root.grand-total; font-size: 18px; font-weight: 800; color: Theme.primary; }
+                    padding: 12px;
+                    spacing: 3px;
+                    Text { text: "Total Semua Metode"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
+                    Text { text: root.grand-total; font-size: 17px; font-weight: 800; color: Theme.primary; }
                 }
             }
 
             Rectangle {
                 horizontal-stretch: 1;
-                height: 80px;
+                height: 76px;
                 background: Theme.bg-card;
                 border-color: Theme.border;
                 border-width: 1px;
                 border-radius: 8px;
                 VerticalLayout {
-                    padding: 14px;
-                    spacing: 4px;
-                    Text { text: "Total Kas Tunai"; font-size: 12px; color: Theme.text-muted; }
-                    Text { text: root.cash-total; font-size: 18px; font-weight: 800; color: Theme.emerald; }
+                    padding: 12px;
+                    spacing: 3px;
+                    Text { text: "Total Kas Tunai"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
+                    Text { text: root.cash-total; font-size: 17px; font-weight: 800; color: Theme.emerald; }
                 }
             }
 
             Rectangle {
                 horizontal-stretch: 1;
-                height: 80px;
+                height: 76px;
                 background: Theme.bg-card;
                 border-color: Theme.border;
                 border-width: 1px;
                 border-radius: 8px;
                 VerticalLayout {
-                    padding: 14px;
-                    spacing: 4px;
-                    Text { text: "Total Transfer Bank"; font-size: 12px; color: Theme.text-muted; }
-                    Text { text: root.transfer-total; font-size: 18px; font-weight: 800; color: Theme.primary-hover; }
+                    padding: 12px;
+                    spacing: 3px;
+                    Text { text: "Total Transfer Bank"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
+                    Text { text: root.transfer-total; font-size: 17px; font-weight: 800; color: Theme.primary-hover; }
                 }
             }
 
             Rectangle {
                 horizontal-stretch: 1;
-                height: 80px;
+                height: 76px;
                 background: Theme.bg-card;
                 border-color: Theme.border;
                 border-width: 1px;
                 border-radius: 8px;
                 VerticalLayout {
-                    padding: 14px;
-                    spacing: 4px;
-                    Text { text: "Total Debet Tabungan"; font-size: 12px; color: Theme.text-muted; }
-                    Text { text: root.savings-total; font-size: 18px; font-weight: 800; color: Theme.amber; }
+                    padding: 12px;
+                    spacing: 3px;
+                    Text { text: "Total Debet Tabungan"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
+                    Text { text: root.savings-total; font-size: 17px; font-weight: 800; color: Theme.amber; }
                 }
             }
         }
@@ -124,15 +146,15 @@ export component ReportsView inherits Rectangle {
             background: Theme.bg-card;
             border-color: Theme.border;
             border-width: 1px;
-            border-radius: 10px;
+            border-radius: 8px;
 
             VerticalLayout {
-                padding: 16px;
+                padding: 14px;
                 spacing: 10px;
 
                 Text {
-                    text: "Rekap Per Petugas Kasir";
-                    font-size: 14px;
+                    text: "Rekap Penerimaan Per Petugas Kasir";
+                    font-size: 13px;
                     font-weight: 700;
                     color: Theme.text-main;
                 }
@@ -147,22 +169,22 @@ export component ReportsView inherits Rectangle {
                         padding-right: 14px;
                         spacing: 8px;
                         alignment: center;
-                        Text { horizontal-stretch: 1; text: "Nama Kasir / Loket"; font-size: 12px; font-weight: 600; color: Theme.text-muted; }
-                        Text { width: 120px; text: "Tunai"; font-size: 12px; font-weight: 600; color: Theme.text-muted; horizontal-alignment: right; }
-                        Text { width: 120px; text: "Transfer"; font-size: 12px; font-weight: 600; color: Theme.text-muted; horizontal-alignment: right; }
-                        Text { width: 120px; text: "Tabungan"; font-size: 12px; font-weight: 600; color: Theme.text-muted; horizontal-alignment: right; }
-                        Text { width: 130px; text: "Total"; font-size: 12px; font-weight: 600; color: Theme.text-muted; horizontal-alignment: right; }
+                        Text { horizontal-stretch: 1; text: "Nama Kasir / Loket"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
+                        Text { width: 120px; text: "Kas Tunai"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
+                        Text { width: 120px; text: "Transfer Bank"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
+                        Text { width: 120px; text: "Debet Tabungan"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
+                        Text { width: 130px; text: "Total Penerimaan"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
                     }
                 }
 
                 Flickable {
                     vertical-stretch: 1;
                     VerticalLayout {
-                        spacing: 6px;
+                        spacing: 4px;
                         for item in root.cashier-summaries: Rectangle {
-                            height: 40px;
+                            height: 38px;
                             background: Theme.bg-secondary;
-                            border-radius: 6px;
+                            border-radius: 4px;
 
                             HorizontalLayout {
                                 padding-left: 14px;
@@ -173,7 +195,7 @@ export component ReportsView inherits Rectangle {
                                 Text {
                                     horizontal-stretch: 1;
                                     text: item.cashier_name;
-                                    font-size: 13px;
+                                    font-size: 12px;
                                     font-weight: 600;
                                     color: Theme.text-main;
                                     vertical-alignment: center;
@@ -210,7 +232,7 @@ export component ReportsView inherits Rectangle {
                                 Text {
                                     width: 130px;
                                     text: item.total_amount;
-                                    font-size: 13px;
+                                    font-size: 12px;
                                     font-weight: 700;
                                     color: Theme.primary;
                                     horizontal-alignment: right;

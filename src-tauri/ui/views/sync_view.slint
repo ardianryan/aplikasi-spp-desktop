@@ -17,40 +17,54 @@ export component SyncView inherits Rectangle {
     callback trigger-sync-clicked();
 
     VerticalLayout {
-        padding: 20px;
-        spacing: 16px;
+        padding: 16px;
+        spacing: 14px;
 
-        Text {
-            text: "Pengaturan & Status Sinkronisasi";
-            font-size: 20px;
-            font-weight: 700;
-            color: Theme.text-main;
+        HorizontalLayout {
+            height: 28px;
+            spacing: 8px;
+            alignment: start;
+            Image {
+                source: @image-url("../assets/icons/sync.svg");
+                width: 18px;
+                height: 18px;
+                image-fit: contain;
+                colorize: Theme.primary;
+                y: 5px;
+            }
+            Text {
+                text: "Pengaturan & Sinkronisasi Server Pusat";
+                font-size: 18px;
+                font-weight: 700;
+                color: Theme.text-main;
+                vertical-alignment: center;
+            }
         }
 
-        // Form Pengaturan Koneksi
+        // Form Pengaturan Koneksi Server
         Rectangle {
-            height: 260px;
+            height: 240px;
             background: Theme.bg-card;
             border-color: Theme.border;
             border-width: 1px;
-            border-radius: 10px;
+            border-radius: 8px;
 
             VerticalLayout {
-                padding: 20px;
-                spacing: 14px;
+                padding: 16px;
+                spacing: 12px;
 
                 Text {
-                    text: "Konfigurasi Server Cloud (Pusat)";
-                    font-size: 15px;
+                    text: "Konfigurasi Peladen Cloud";
+                    font-size: 14px;
                     font-weight: 700;
                     color: Theme.text-main;
                 }
 
                 VerticalLayout {
                     spacing: 4px;
-                    Text { text: "URL Server API:"; font-size: 12px; color: Theme.text-muted; }
+                    Text { text: "URL Server API:"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
                     Rectangle {
-                        height: 40px;
+                        height: 38px;
                         background: Theme.bg-primary;
                         border-color: Theme.border;
                         border-width: 1px;
@@ -69,9 +83,9 @@ export component SyncView inherits Rectangle {
 
                 VerticalLayout {
                     spacing: 4px;
-                    Text { text: "Token Akses Kasir / Pairing Key:"; font-size: 12px; color: Theme.text-muted; }
+                    Text { text: "Token Akses Kasir / Kunci Pairing:"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
                     Rectangle {
-                        height: 40px;
+                        height: 38px;
                         background: Theme.bg-primary;
                         border-color: Theme.border;
                         border-width: 1px;
@@ -89,12 +103,12 @@ export component SyncView inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    spacing: 12px;
+                    spacing: 10px;
                     alignment: start;
 
                     Rectangle {
-                        width: 140px;
-                        height: 38px;
+                        width: 120px;
+                        height: 36px;
                         background: Theme.primary-light;
                         border-radius: 6px;
                         TouchArea {
@@ -103,7 +117,7 @@ export component SyncView inherits Rectangle {
                             mouse-cursor: pointer;
                         }
                         Text {
-                            text: root.is-testing ? "Menguji..." : "🔌 Uji Koneksi";
+                            text: root.is-testing ? "Menguji..." : "Uji Koneksi";
                             color: Theme.on-primary-light;
                             font-size: 12px;
                             font-weight: 700;
@@ -113,8 +127,8 @@ export component SyncView inherits Rectangle {
                     }
 
                     Rectangle {
-                        width: 150px;
-                        height: 38px;
+                        width: 140px;
+                        height: 36px;
                         background: Theme.primary;
                         border-radius: 6px;
                         TouchArea {
@@ -122,7 +136,7 @@ export component SyncView inherits Rectangle {
                             mouse-cursor: pointer;
                         }
                         Text {
-                            text: "💾 Simpan Konfigurasi";
+                            text: "Simpan Pengaturan";
                             color: white;
                             font-size: 12px;
                             font-weight: 700;
@@ -142,57 +156,57 @@ export component SyncView inherits Rectangle {
             }
         }
 
-        // Status Antrean & Sinkronisasi
+        // Status Antrean Failover
         Rectangle {
             vertical-stretch: 1;
             background: Theme.bg-card;
             border-color: Theme.border;
             border-width: 1px;
-            border-radius: 10px;
+            border-radius: 8px;
 
             VerticalLayout {
-                padding: 20px;
-                spacing: 14px;
+                padding: 16px;
+                spacing: 12px;
 
                 Text {
-                    text: "Status Failover & Antrean Data";
-                    font-size: 15px;
+                    text: "Status Sinkronisasi & Antrean Data Offline";
+                    font-size: 14px;
                     font-weight: 700;
                     color: Theme.text-main;
                 }
 
                 HorizontalLayout {
-                    spacing: 14px;
+                    spacing: 12px;
 
                     Rectangle {
                         horizontal-stretch: 1;
-                        height: 70px;
+                        height: 68px;
                         background: Theme.bg-secondary;
-                        border-radius: 8px;
+                        border-radius: 6px;
                         VerticalLayout {
-                            padding: 12px;
+                            padding: 10px;
                             spacing: 4px;
-                            Text { text: "Antrean Belum Terkirim (Pending Push):"; font-size: 12px; color: Theme.text-muted; }
+                            Text { text: "Antrean Belum Terkirim (Pending Push):"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
                             Text { text: root.pending-records-count + " Catatan Transaksi"; font-size: 16px; font-weight: 800; color: root.pending-records-count == "0" ? Theme.emerald : Theme.rose; }
                         }
                     }
 
                     Rectangle {
                         horizontal-stretch: 1;
-                        height: 70px;
+                        height: 68px;
                         background: Theme.bg-secondary;
-                        border-radius: 8px;
+                        border-radius: 6px;
                         VerticalLayout {
-                            padding: 12px;
+                            padding: 10px;
                             spacing: 4px;
-                            Text { text: "Sinkronisasi Terakhir:"; font-size: 12px; color: Theme.text-muted; }
-                            Text { text: root.last-sync-time; font-size: 15px; font-weight: 700; color: Theme.primary; }
+                            Text { text: "Sinkronisasi Terakhir:"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
+                            Text { text: root.last-sync-time; font-size: 14px; font-weight: 700; color: Theme.primary; }
                         }
                     }
                 }
 
                 if root.sync-message != "": Rectangle {
-                    height: 40px;
+                    height: 38px;
                     background: Theme.primary-light;
                     border-radius: 6px;
                     HorizontalLayout {
@@ -209,10 +223,10 @@ export component SyncView inherits Rectangle {
                 }
 
                 Rectangle {
-                    width: 220px;
-                    height: 44px;
-                    background: root.is-syncing ? #a0a0a0 : Theme.emerald;
-                    border-radius: 8px;
+                    width: 200px;
+                    height: 40px;
+                    background: root.is-syncing ? #94a3b8 : Theme.emerald;
+                    border-radius: 6px;
                     TouchArea {
                         enabled: !root.is-syncing;
                         clicked => { root.trigger-sync-clicked(); }
@@ -221,10 +235,16 @@ export component SyncView inherits Rectangle {
                     HorizontalLayout {
                         alignment: center;
                         spacing: 8px;
+                        Image {
+                            source: @image-url("../assets/icons/sync.svg");
+                            width: 14px;
+                            height: 14px;
+                            image-fit: contain;
+                        }
                         Text {
-                            text: root.is-syncing ? "Sedang Sinkronisasi..." : "🔄 Sinkronkan Sekarang";
+                            text: root.is-syncing ? "Sinkronisasi..." : "Sinkronkan Sekarang";
                             color: white;
-                            font-size: 13px;
+                            font-size: 12px;
                             font-weight: 700;
                             vertical-alignment: center;
                         }

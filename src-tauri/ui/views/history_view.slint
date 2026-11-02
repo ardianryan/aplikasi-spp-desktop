@@ -21,17 +21,30 @@ export component HistoryView inherits Rectangle {
     callback print-receipt(string);
 
     VerticalLayout {
-        padding: 20px;
-        spacing: 16px;
+        padding: 16px;
+        spacing: 14px;
 
         HorizontalLayout {
+            height: 36px;
             alignment: space-between;
-            Text {
-                text: "Riwayat Transaksi Keseluruhan";
-                font-size: 20px;
-                font-weight: 700;
-                color: Theme.text-main;
-                vertical-alignment: center;
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+                Image {
+                    source: @image-url("../assets/icons/history.svg");
+                    width: 18px;
+                    height: 18px;
+                    image-fit: contain;
+                    colorize: Theme.primary;
+                    y: 9px;
+                }
+                Text {
+                    text: "Riwayat Transaksi Keseluruhan";
+                    font-size: 18px;
+                    font-weight: 700;
+                    color: Theme.text-main;
+                    vertical-alignment: center;
+                }
             }
 
             Rectangle {
@@ -43,20 +56,29 @@ export component HistoryView inherits Rectangle {
                     clicked => { root.refresh-clicked(); }
                     mouse-cursor: pointer;
                 }
-                Text {
-                    text: "🔄 Segarkan";
-                    color: white;
-                    font-size: 12px;
-                    font-weight: 600;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 6px;
+                    Image {
+                        source: @image-url("../assets/icons/sync.svg");
+                        width: 12px;
+                        height: 12px;
+                        image-fit: contain;
+                    }
+                    Text {
+                        text: "Segarkan";
+                        color: white;
+                        font-size: 12px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
                 }
             }
         }
 
         // Search Filter
         Rectangle {
-            height: 44px;
+            height: 40px;
             background: Theme.bg-card;
             border-color: Theme.border;
             border-width: 1px;
@@ -65,24 +87,36 @@ export component HistoryView inherits Rectangle {
             HorizontalLayout {
                 padding-left: 14px;
                 padding-right: 14px;
-                spacing: 8px;
+                spacing: 10px;
                 alignment: center;
-                Text {
-                    text: "🔍";
-                    font-size: 13px;
-                    vertical-alignment: center;
+
+                Image {
+                    source: @image-url("../assets/icons/search.svg");
+                    width: 16px;
+                    height: 16px;
+                    image-fit: contain;
+                    colorize: Theme.text-muted;
                 }
-                TextInput {
-                    text <=> root.filter-search;
-                    font-size: 13px;
-                    vertical-alignment: center;
+
+                Rectangle {
                     horizontal-stretch: 1;
-                }
-                if root.filter-search == "": Text {
-                    text: "Saring transaksi berdasarkan nomor struk atau nama...";
-                    color: Theme.text-muted;
-                    font-size: 13px;
-                    vertical-alignment: center;
+                    height: 38px;
+
+                    if root.filter-search == "": Text {
+                        x: 0px;
+                        text: "Saring transaksi berdasarkan nomor struk atau nama siswa...";
+                        color: Theme.text-muted;
+                        font-size: 13px;
+                        vertical-alignment: center;
+                    }
+
+                    TextInput {
+                        width: 100%;
+                        height: 100%;
+                        text <=> root.filter-search;
+                        font-size: 13px;
+                        vertical-alignment: center;
+                    }
                 }
             }
         }
@@ -93,10 +127,10 @@ export component HistoryView inherits Rectangle {
             background: Theme.bg-card;
             border-color: Theme.border;
             border-width: 1px;
-            border-radius: 10px;
+            border-radius: 8px;
 
             VerticalLayout {
-                padding: 16px;
+                padding: 14px;
                 spacing: 10px;
 
                 // Columns Header
@@ -109,25 +143,37 @@ export component HistoryView inherits Rectangle {
                         padding-right: 14px;
                         spacing: 8px;
                         alignment: center;
-                        Text { width: 140px; text: "No. Transaksi"; font-size: 12px; font-weight: 600; color: Theme.text-muted; }
-                        Text { horizontal-stretch: 1; text: "Nama Siswa / Kelas"; font-size: 12px; font-weight: 600; color: Theme.text-muted; }
-                        Text { width: 100px; text: "Metode"; font-size: 12px; font-weight: 600; color: Theme.text-muted; }
-                        Text { width: 110px; text: "Total"; font-size: 12px; font-weight: 600; color: Theme.text-muted; horizontal-alignment: right; }
-                        Text { width: 130px; text: "Tanggal & Jam"; font-size: 12px; font-weight: 600; color: Theme.text-muted; horizontal-alignment: right; }
-                        Text { width: 80px; text: "Sync"; font-size: 12px; font-weight: 600; color: Theme.text-muted; horizontal-alignment: center; }
-                        Text { width: 50px; text: "Struk"; font-size: 12px; font-weight: 600; color: Theme.text-muted; horizontal-alignment: center; }
+                        Text { width: 150px; text: "No. Transaksi"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
+                        Text { horizontal-stretch: 1; text: "Nama Siswa / Kelas"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
+                        Text { width: 100px; text: "Metode"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
+                        Text { width: 110px; text: "Total"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
+                        Text { width: 130px; text: "Tanggal & Jam"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
+                        Text { width: 80px; text: "Status Sync"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: center; }
+                        Text { width: 50px; text: "Aksi"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: center; }
                     }
                 }
 
-                // Records Scroll
-                Flickable {
+                if root.records.length == 0: Rectangle {
+                    vertical-stretch: 1;
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: "Belum ada catatan riwayat transaksi.";
+                            font-size: 12px;
+                            color: Theme.text-muted;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                if root.records.length > 0: Flickable {
                     vertical-stretch: 1;
                     VerticalLayout {
-                        spacing: 6px;
+                        spacing: 4px;
                         for row in root.records: Rectangle {
-                            height: 42px;
+                            height: 38px;
                             background: Theme.bg-secondary;
-                            border-radius: 6px;
+                            border-radius: 4px;
 
                             HorizontalLayout {
                                 padding-left: 14px;
@@ -136,9 +182,9 @@ export component HistoryView inherits Rectangle {
                                 alignment: center;
 
                                 Text {
-                                    width: 140px;
+                                    width: 150px;
                                     text: row.transaction_code;
-                                    font-size: 12px;
+                                    font-size: 11px;
                                     font-weight: 700;
                                     color: Theme.primary;
                                     vertical-alignment: center;
@@ -147,7 +193,7 @@ export component HistoryView inherits Rectangle {
                                 Text {
                                     horizontal-stretch: 1;
                                     text: row.student_name + " (" + row.student_class + ")";
-                                    font-size: 12px;
+                                    font-size: 11px;
                                     color: Theme.text-main;
                                     vertical-alignment: center;
                                 }
@@ -155,7 +201,7 @@ export component HistoryView inherits Rectangle {
                                 Text {
                                     width: 100px;
                                     text: row.payment_method;
-                                    font-size: 12px;
+                                    font-size: 11px;
                                     color: Theme.text-muted;
                                     vertical-alignment: center;
                                 }
@@ -163,7 +209,7 @@ export component HistoryView inherits Rectangle {
                                 Text {
                                     width: 110px;
                                     text: row.total_amount;
-                                    font-size: 12px;
+                                    font-size: 11px;
                                     font-weight: 700;
                                     color: Theme.emerald;
                                     horizontal-alignment: right;
@@ -182,12 +228,12 @@ export component HistoryView inherits Rectangle {
                                 // Sync Status Badge
                                 Rectangle {
                                     width: 80px;
-                                    height: 22px;
-                                    border-radius: 11px;
+                                    height: 20px;
+                                    border-radius: 10px;
                                     background: row.sync_status == "synced" ? Theme.emerald-light : Theme.amber-light;
                                     Text {
-                                        text: row.sync_status == "synced" ? "TERKIRIM" : "ANTRIAN";
-                                        font-size: 10px;
+                                        text: row.sync_status == "synced" ? "TERKIRIM" : "ANTREAN";
+                                        font-size: 9px;
                                         font-weight: 700;
                                         color: row.sync_status == "synced" ? Theme.emerald : Theme.amber;
                                         horizontal-alignment: center;
@@ -195,23 +241,33 @@ export component HistoryView inherits Rectangle {
                                     }
                                 }
 
-                                // Print Button
+                                // Tombol Cetak Struk
                                 Rectangle {
                                     width: 50px;
-                                    height: 26px;
+                                    height: 24px;
                                     background: Theme.primary-light;
                                     border-radius: 4px;
                                     TouchArea {
                                         clicked => { root.print-receipt(row.transaction_code); }
                                         mouse-cursor: pointer;
                                     }
-                                    Text {
-                                        text: "🖨️ Cetak";
-                                        font-size: 10px;
-                                        font-weight: 600;
-                                        color: Theme.on-primary-light;
-                                        horizontal-alignment: center;
-                                        vertical-alignment: center;
+                                    HorizontalLayout {
+                                        alignment: center;
+                                        spacing: 4px;
+                                        Image {
+                                            source: @image-url("../assets/icons/print.svg");
+                                            width: 11px;
+                                            height: 11px;
+                                            image-fit: contain;
+                                            colorize: Theme.primary;
+                                        }
+                                        Text {
+                                            text: "Cetak";
+                                            font-size: 10px;
+                                            font-weight: 600;
+                                            color: Theme.on-primary-light;
+                                            vertical-alignment: center;
+                                        }
                                     }
                                 }
                             }
