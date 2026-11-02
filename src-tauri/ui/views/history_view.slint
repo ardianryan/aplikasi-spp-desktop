@@ -19,6 +19,7 @@ export component HistoryView inherits Rectangle {
     in-out property <string> filter-search: "";
     callback refresh-clicked();
     callback print-receipt(string);
+    callback search-changed(string);
 
     VerticalLayout {
         padding: 16px;
@@ -124,6 +125,7 @@ export component HistoryView inherits Rectangle {
                         text <=> root.filter-search;
                         font-size: 13px;
                         vertical-alignment: center;
+                        edited => { root.search-changed(self.text); }
                     }
                 }
             }

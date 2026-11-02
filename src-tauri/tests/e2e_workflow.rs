@@ -165,7 +165,9 @@ fn test_e2e_full_pos_and_savings_flow() {
 
     let pending_payments: i64 = conn.query_row("SELECT count(*) FROM payments WHERE sync_status != 'synced';", [], |r| r.get(0)).unwrap_or(0);
     let pending_savings: i64 = conn.query_row("SELECT count(*) FROM savings_transactions WHERE sync_status != 'synced';", [], |r| r.get(0)).unwrap_or(0);
-    println!("Antrean sinkronisasi offline: payments={}, savings={}", pending_payments, pending_savings);
+    let total_payments_all: i64 = conn.query_row("SELECT count(*) FROM payments;", [], |r| r.get(0)).unwrap_or(0);
+    let savings_enabled_val: String = conn.query_row("SELECT value FROM settings WHERE key = 'savings_enabled';", [], |r| r.get(0)).unwrap_or_else(|_| "not found".to_string());
+    println!("Antrean sinkronisasi offline: payments={}, savings={}, TOTAL_PAYMENTS={}, savings_enabled={}", pending_payments, pending_savings, total_payments_all, savings_enabled_val);
 
     println!("🎉 Seluruh Pengujian E2E Database & POS Workflow Berhasil 100%!");
 }

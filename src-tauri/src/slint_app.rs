@@ -78,6 +78,8 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
     // Cek Konfigurasi Server & PIN Offline
     {
         if let Ok(conn) = conn_arc.lock() {
+            update_branding_and_settings(&app, &conn);
+
             let api_url: String = conn.query_row("SELECT value FROM settings WHERE key = 'api_url';", [], |r| r.get(0))
                 .unwrap_or_else(|_| "https://sekolah.id".to_string());
             app.set_api_endpoint_url(api_url.into());
@@ -339,9 +341,9 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Hitung total bayar
                 let total_amount: f64 = state_lock.cart.iter().map(|c| c.pay_amount).sum();
-                let _method_name = match state_lock.selected_method {
-                    1 => "Transfer Bank",
-                    2 => "Tabungan Siswa",
+                let method_name = match state_lock.selected_method {
+                    1 => "Transfer",
+                    2 => "Tabungan",
                     _ => "Tunai",
                 };
 
@@ -350,6 +352,9 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     2 => "tabungan",
                     _ => "cash",
                 };
+
+                let academic_year_id = state_lock.active_year_id.clone();
+                let cashier_nama = state_lock.user_nama.clone();
 
                 // Generate kode transaksi: TRX-YYYYMMDD-HHMMSS-RAND
                 let now = Local::now();
@@ -364,11 +369,13 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                 if let Ok(mut conn) = conn_arc.lock() {
                     let tx = conn.transaction();
                     if let Ok(tx) = tx {
-                        // Insert ke payments
+                        let user_id = get_active_user_id(&tx);
+
+                        // Insert ke payments sesuai schema SQLite & sync engine
                         let res_p = tx.execute(
-                            "INSERT INTO payments (id, transaction_code, student_id, payment_method_id, total_amount, status, created_at, updated_at, is_pushed)
-                             VALUES (?1, ?2, ?3, ?4, ?5, 'success', ?6, ?6, 0);",
-                            params![tx_id, tx_code, student_id, method_id, total_amount, now_str]
+                            "INSERT INTO payments (id, transaction_code, student_id, user_id, total_amount, payment_method_id, payment_method_name, notes, academic_year_id, created_at, sync_status)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '', ?8, ?9, 'pending_push');",
+                            params![tx_id, tx_code, student_id, user_id, total_amount, method_id, method_name, academic_year_id, now_str]
                         );
 
                         if res_p.is_ok() {
@@ -376,8 +383,8 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                             for item in &state_lock.cart {
                                 let det_id = Uuid::new_v4().to_string();
                                 let _ = tx.execute(
-                                    "INSERT INTO payment_details (id, payment_id, payment_assignment_id, amount, created_at, updated_at)
-                                     VALUES (?1, ?2, ?3, ?4, ?5, ?5);",
+                                    "INSERT INTO payment_details (id, payment_id, payment_assignment_id, amount, notes, created_at, sync_status)
+                                     VALUES (?1, ?2, ?3, ?4, '', ?5, 'pending_push');",
                                     params![det_id, tx_id, item.assignment_id, item.pay_amount, now_str]
                                 );
 
@@ -389,15 +396,14 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                                              WHEN (paid_amount + ?1 + relief_amount) >= amount THEN 'lunas'
                                              ELSE 'sebagian'
                                          END,
-                                         updated_at = ?2
-                                     WHERE id = ?3;",
-                                    params![item.pay_amount, now_str, item.assignment_id]
+                                         sync_status = 'pending_push'
+                                     WHERE id = ?2;",
+                                    params![item.pay_amount, item.assignment_id]
                                 );
                             }
 
                             // Jika debet dari Tabungan Siswa
                             if method_id == "tabungan" {
-                                let user_id = get_active_user_id(&tx);
                                 let savings_id: String = tx.query_row(
                                     "SELECT id FROM savings WHERE student_id = ?1;",
                                     [&student_id],
@@ -445,6 +451,13 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     load_student_details_ui(&app, &conn_arc, &state, &student_id);
                     refresh_today_payments_ui(&app, &conn_arc);
                     refresh_sync_status_ui(&app, &conn_arc);
+
+                    // Cetak otomatis kwitansi pembayaran
+                    if let Ok(conn) = conn_arc.lock() {
+                        let _ = print_receipt_document(&conn, &tx_code, &cashier_nama);
+                    }
+                    app.set_sync_toast_message(format!("Pembayaran {} berhasil! Kwitansi dibuka.", tx_code).into());
+                    app.set_sync_toast_is_error(false);
                 }
             }
         });
@@ -499,8 +512,12 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                                     println!("[WARN] Sinkronisasi Gagal: {}", err);
                                 }
                             }
+                            if let Ok(conn) = conn_arc2.lock() {
+                                update_branding_and_settings(&app, &conn);
+                            }
                             refresh_sync_status_ui(&app, &conn_arc2);
                             refresh_today_payments_ui(&app, &conn_arc2);
+                            refresh_history_tab_ui(&app, &conn_arc2, "");
 
                             // Auto-hide toast notification after 5 seconds
                             std::thread::spawn(move || {
@@ -568,6 +585,45 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
         app.on_refresh_history(move || {
             if let Some(app) = app_weak.upgrade() {
                 refresh_history_tab_ui(&app, &conn_arc, "");
+            }
+        });
+    }
+
+    {
+        let conn_arc = Arc::clone(&conn_arc);
+        let app_weak = app_weak.clone();
+        app.on_history_search_changed(move |q_slint| {
+            if let Some(app) = app_weak.upgrade() {
+                refresh_history_tab_ui(&app, &conn_arc, q_slint.as_str());
+            }
+        });
+    }
+
+    {
+        let conn_arc = Arc::clone(&conn_arc);
+        let state = Arc::clone(&state);
+        let app_weak = app_weak.clone();
+        app.on_print_receipt(move |trx_code_slint| {
+            let trx_code = trx_code_slint.to_string();
+            if trx_code.is_empty() {
+                return;
+            }
+            if let Ok(conn) = conn_arc.lock() {
+                let cashier_name = state.lock().unwrap().user_nama.clone();
+                match print_receipt_document(&conn, &trx_code, &cashier_name) {
+                    Ok(_) => {
+                        if let Some(app) = app_weak.upgrade() {
+                            app.set_sync_toast_message("Membuka kwitansi pembayaran untuk dicetak...".into());
+                            app.set_sync_toast_is_error(false);
+                        }
+                    }
+                    Err(e) => {
+                        if let Some(app) = app_weak.upgrade() {
+                            app.set_sync_toast_message(format!("Gagal cetak kwitansi: {}", e).into());
+                            app.set_sync_toast_is_error(true);
+                        }
+                    }
+                }
             }
         });
     }
@@ -711,6 +767,9 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                         app.set_user_role(sess.role.into());
                         app.set_login_error("".into());
                         app.set_is_logged_in(true);
+                        if let Ok(conn) = conn_arc.lock() {
+                            update_branding_and_settings(&app, &conn);
+                        }
                         refresh_today_payments_ui(&app, &conn_arc);
                         refresh_sync_status_ui(&app, &conn_arc);
                     }
@@ -789,6 +848,9 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                                 app.set_user_role(sess.role.into());
                                 app.set_login_error("".into());
                                 app.set_is_logged_in(true);
+                                if let Ok(conn) = conn_arc.lock() {
+                                    update_branding_and_settings(&app, &conn);
+                                }
                                 refresh_today_payments_ui(&app, &conn_arc);
                                 refresh_sync_status_ui(&app, &conn_arc);
                                 println!("[INFO] Kasir berhasil masuk dengan kode otorisasi.");
@@ -811,6 +873,446 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
 // ==========================================
 // UI DATA POPULATORS & HELPERS
 // ==========================================
+
+fn base64_decode(input: &str) -> Option<Vec<u8>> {
+    let clean: String = input.chars().filter(|c| !c.is_whitespace()).collect();
+    let bytes = clean.as_bytes();
+    if bytes.len() % 4 != 0 {
+        return None;
+    }
+    let decode_char = |b: u8| -> Option<u8> {
+        match b {
+            b'A'..=b'Z' => Some(b - b'A'),
+            b'a'..=b'z' => Some(b - b'a' + 26),
+            b'0'..=b'9' => Some(b - b'0' + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    };
+    let mut out = Vec::with_capacity(bytes.len() * 3 / 4);
+    for chunk in bytes.chunks(4) {
+        let b0 = decode_char(chunk[0])?;
+        let b1 = decode_char(chunk[1])?;
+        out.push((b0 << 2) | (b1 >> 4));
+        if chunk[2] != b'=' {
+            let b2 = decode_char(chunk[2])?;
+            out.push((b1 << 4) | (b2 >> 2));
+            if chunk[3] != b'=' {
+                let b3 = decode_char(chunk[3])?;
+                out.push((b2 << 6) | b3);
+            }
+        }
+    }
+    Some(out)
+}
+
+fn load_and_cache_school_logo(conn: &Connection) -> Option<std::path::PathBuf> {
+    let logo_data: String = conn.query_row(
+        "SELECT value FROM settings WHERE key IN ('logo_left', 'app_logo') AND value != '' ORDER BY CASE WHEN key = 'logo_left' THEN 1 ELSE 2 END LIMIT 1;",
+        [],
+        |r| r.get(0)
+    ).unwrap_or_default();
+
+    let cache_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::env::temp_dir())
+        .join("me.ppti.partisipasi-sekolah");
+    let _ = std::fs::create_dir_all(&cache_dir);
+    let logo_file = cache_dir.join("cached_school_logo.png");
+
+    if !logo_data.is_empty() {
+        if let Some(pos) = logo_data.find("base64,") {
+            let b64_str = &logo_data[pos + 7..];
+            if let Some(bytes) = base64_decode(b64_str) {
+                let _ = std::fs::write(&logo_file, &bytes);
+                return Some(logo_file);
+            }
+        }
+    }
+
+    if logo_file.exists() {
+        Some(logo_file)
+    } else {
+        None
+    }
+}
+
+fn update_branding_and_settings(app: &AppWindow, conn: &Connection) {
+    let school_name: String = conn.query_row(
+        "SELECT value FROM settings WHERE key = 'school_name';",
+        [],
+        |r| r.get(0)
+    ).unwrap_or_default();
+
+    let win_title = if !school_name.trim().is_empty() {
+        format!("{} - Partisipasi Sekolah Desktop v0.2.0", school_name.trim())
+    } else {
+        "Partisipasi Sekolah Desktop v0.2.0".to_string()
+    };
+    app.set_window_title(win_title.into());
+
+    let savings_enabled: String = conn.query_row(
+        "SELECT value FROM settings WHERE key = 'savings_enabled';",
+        [],
+        |r| r.get(0)
+    ).unwrap_or_else(|_| "0".to_string());
+    app.set_savings_enabled(savings_enabled.trim() == "1");
+
+    if let Some(logo_path) = load_and_cache_school_logo(conn) {
+        if let Ok(img) = slint::Image::load_from_path(&logo_path) {
+            app.set_has_school_logo(true);
+            app.set_school_logo(img);
+        }
+    }
+}
+
+fn html_escape(input: &str) -> String {
+    input.replace('&', "&amp;")
+         .replace('<', "&lt;")
+         .replace('>', "&gt;")
+         .replace('"', "&quot;")
+         .replace('\'', "&#39;")
+}
+
+fn print_receipt_document(conn: &Connection, trx_code: &str, cashier_name: &str) -> Result<(), String> {
+    // 1. Query data transaksi & siswa
+    let (payment_id, created_at, payment_method_name, total_amount, notes, student_nama, student_nis, student_kelas) = conn.query_row(
+        "SELECT p.id, p.created_at, COALESCE(p.payment_method_name, 'Tunai'), p.total_amount, p.notes, s.nama, s.nis, COALESCE(s.kelas, c.name, '-')
+         FROM payments p
+         JOIN students s ON p.student_id = s.id
+         LEFT JOIN classrooms c ON s.classroom_id = c.id
+         WHERE p.transaction_code = ?1;",
+        [trx_code],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, f64>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, String>(7)?,
+            ))
+        }
+    ).map_err(|e| format!("Transaksi tidak ditemukan: {}", e))?;
+
+    // 2. Query rincian pembayaran
+    let mut stmt = conn.prepare(
+        "SELECT t.name, t.type, a.month, d.amount, y.name
+         FROM payment_details d
+         JOIN payment_assignments a ON d.payment_assignment_id = a.id
+         JOIN payment_types t ON a.payment_type_id = t.id
+         LEFT JOIN academic_years y ON a.academic_year_id = y.id
+         WHERE d.payment_id = ?1;"
+    ).map_err(|e| e.to_string())?;
+
+    let items: Vec<(String, Option<i32>, f64, Option<String>)> = stmt.query_map([&payment_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, Option<i32>>(2)?,
+            row.get::<_, f64>(3)?,
+            row.get::<_, Option<String>>(4)?,
+        ))
+    }).map_err(|e| e.to_string())?.flatten().collect();
+
+    // 3. Query pengaturan sekolah & kop
+    let school_name: String = conn.query_row("SELECT value FROM settings WHERE key = 'school_name';", [], |r| r.get(0)).unwrap_or_else(|_| "Nama Sekolah".into());
+    let school_address: String = conn.query_row("SELECT value FROM settings WHERE key = 'school_address';", [], |r| r.get(0)).unwrap_or_else(|_| "Alamat Sekolah".into());
+    let committee_name: String = conn.query_row("SELECT value FROM settings WHERE key = 'committee_name';", [], |r| r.get(0)).unwrap_or_default();
+    let logo_left: String = conn.query_row("SELECT value FROM settings WHERE key = 'logo_left';", [], |r| r.get(0)).unwrap_or_default();
+    let stamp_image: String = conn.query_row("SELECT value FROM settings WHERE key = 'stamp_image';", [], |r| r.get(0)).unwrap_or_default();
+
+    let month_name = |m: i32| -> &'static str {
+        match m {
+            7 => "Juli", 8 => "Agustus", 9 => "September", 10 => "Oktober",
+            11 => "November", 12 => "Desember", 1 => "Januari", 2 => "Februari",
+            3 => "Maret", 4 => "April", 5 => "Mei", 6 => "Juni", _ => "",
+        }
+    };
+
+    let mut rows_html = String::new();
+    for (i, item) in items.iter().enumerate() {
+        let mut desc = item.0.clone();
+        if let Some(m) = item.1 {
+            let m_name = month_name(m);
+            if !m_name.is_empty() {
+                desc.push_str(&format!(" ({})", m_name));
+            }
+        }
+        if let Some(ref y) = item.3 {
+            desc.push_str(&format!(" [T.A {}]", y));
+        }
+        rows_html.push_str(&format!(
+            "<tr><td style=\"text-align:center;\">{}</td><td>{}</td><td style=\"text-align:right;\">{}</td></tr>",
+            i + 1,
+            html_escape(&desc),
+            format_idr(item.2)
+        ));
+    }
+
+    let logo_tag = if !logo_left.is_empty() {
+        format!("<img src=\"{}\" alt=\"Logo\" style=\"height:64px; max-width:120px; object-fit:contain;\" />", logo_left)
+    } else {
+        "".to_string()
+    };
+
+    let stamp_tag = if !stamp_image.is_empty() {
+        format!("<img src=\"{}\" alt=\"Stempel\" style=\"position:absolute; left:10px; top:-20px; height:80px; opacity:0.8; transform:rotate(-8deg); z-index:1; pointer-events:none;\" />", stamp_image)
+    } else {
+        "".to_string()
+    };
+
+    let committee_tag = if !committee_name.is_empty() {
+        format!("<h3 style=\"margin:0; font-size:14px; font-weight:700;\">{}</h3>", html_escape(&committee_name))
+    } else {
+        "".to_string()
+    };
+
+    let notes_tag = if let Some(n) = notes {
+        if !n.trim().is_empty() {
+            format!("<div style=\"margin-top:12px; font-size:11px; color:#555;\"><strong>Catatan:</strong> {}</div>", html_escape(&n))
+        } else { "".to_string() }
+    } else { "".to_string() };
+
+    let today_date_str = Local::now().format("%d %B %Y").to_string();
+
+    let full_html = format!(r#"<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <title>Kwitansi Pembayaran - {trx_code}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #111;
+            margin: 0;
+            padding: 24px;
+            background: #f8fafc;
+        }}
+        .receipt-card {{
+            max-width: 680px;
+            margin: 0 auto;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 28px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+        }}
+        .header {{
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            border-bottom: 2px solid #002b59;
+            padding-bottom: 12px;
+            margin-bottom: 16px;
+        }}
+        .school-info {{
+            flex: 1;
+            text-align: center;
+        }}
+        .school-name {{
+            font-size: 18px;
+            font-weight: 800;
+            color: #002b59;
+            margin: 0;
+            letter-spacing: 0.5px;
+        }}
+        .school-addr {{
+            font-size: 11px;
+            color: #475569;
+            margin: 4px 0 0 0;
+        }}
+        .title {{
+            text-align: center;
+            font-size: 15px;
+            font-weight: 800;
+            letter-spacing: 1.5px;
+            color: #1e293b;
+            margin: 12px 0 16px 0;
+            text-transform: uppercase;
+        }}
+        .meta-table {{
+            width: 100%;
+            font-size: 12px;
+            margin-bottom: 16px;
+            border-collapse: collapse;
+        }}
+        .meta-table td {{
+            padding: 4px 6px;
+        }}
+        .meta-label {{
+            width: 110px;
+            color: #64748b;
+            font-weight: 600;
+        }}
+        .items-table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin-bottom: 16px;
+        }}
+        .items-table th {{
+            background: #f1f5f9;
+            padding: 8px;
+            border: 1px solid #cbd5e1;
+            font-weight: 700;
+            color: #334155;
+        }}
+        .items-table td {{
+            padding: 8px;
+            border: 1px solid #cbd5e1;
+        }}
+        .total-row td {{
+            font-weight: 800;
+            font-size: 13px;
+            background: #f8fafc;
+        }}
+        .footer {{
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 24px;
+        }}
+        .sign-box {{
+            width: 220px;
+            text-align: center;
+            font-size: 12px;
+            position: relative;
+        }}
+        .sign-space {{
+            height: 60px;
+            position: relative;
+        }}
+        .cashier-name {{
+            font-weight: 700;
+            text-decoration: underline;
+        }}
+        .footer-note {{
+            margin-top: 24px;
+            text-align: center;
+            font-size: 10px;
+            color: #94a3b8;
+            border-top: 1px dashed #e2e8f0;
+            padding-top: 8px;
+        }}
+        @media print {{
+            body {{
+                background: #ffffff;
+                padding: 0;
+            }}
+            .receipt-card {{
+                box-shadow: none;
+                border: none;
+                padding: 0;
+                max-width: 100%;
+            }}
+            .no-print {{
+                display: none;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="receipt-card">
+        <div class="header">
+            {logo_tag}
+            <div class="school-info">
+                {committee_tag}
+                <div class="school-name">{school_name_escaped}</div>
+                <div class="school-addr">{school_address_escaped}</div>
+            </div>
+        </div>
+        <div class="title">Kwitansi Pembayaran</div>
+        <table class="meta-table">
+            <tr>
+                <td class="meta-label">No. Transaksi</td>
+                <td>: <strong>{trx_code}</strong></td>
+                <td class="meta-label">Tanggal</td>
+                <td>: {created_at}</td>
+            </tr>
+            <tr>
+                <td class="meta-label">Nama Siswa</td>
+                <td>: <strong>{student_nama}</strong></td>
+                <td class="meta-label">NIS</td>
+                <td>: {student_nis}</td>
+            </tr>
+            <tr>
+                <td class="meta-label">Kelas</td>
+                <td>: {student_kelas}</td>
+                <td class="meta-label">Metode Bayar</td>
+                <td>: {payment_method_name}</td>
+            </tr>
+        </table>
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th style="width:36px;">No</th>
+                    <th>Keterangan Pembayaran</th>
+                    <th style="width:140px; text-align:right;">Jumlah</th>
+                </tr>
+            </thead>
+            <tbody>
+                {rows_html}
+            </tbody>
+            <tfoot>
+                <tr class="total-row">
+                    <td colspan="2" style="text-align:right;">Total Pembayaran</td>
+                    <td style="text-align:right; color:#002b59;">{total_amount_formatted}</td>
+                </tr>
+            </tfoot>
+        </table>
+        {notes_tag}
+        <div class="footer">
+            <div class="sign-box">
+                <div>Mojokerto, {today_date_str}</div>
+                <div style="font-weight:600; margin-top:2px;">Petugas Penerima,</div>
+                <div class="sign-space">
+                    {stamp_tag}
+                </div>
+                <div class="cashier-name">{cashier_name}</div>
+            </div>
+        </div>
+        <div class="footer-note">
+            Kwitansi ini merupakan bukti pembayaran yang sah &bull; Dicetak oleh Sistem Kasir Partisipasi Sekolah
+        </div>
+    </div>
+    <script>
+        window.onload = function() {{
+            window.print();
+        }};
+    </script>
+</body>
+</html>"#,
+        trx_code = trx_code,
+        logo_tag = logo_tag,
+        committee_tag = committee_tag,
+        school_name_escaped = html_escape(&school_name),
+        school_address_escaped = html_escape(&school_address),
+        created_at = created_at,
+        student_nama = html_escape(&student_nama),
+        student_nis = html_escape(&student_nis.unwrap_or_else(|| "-".into())),
+        student_kelas = html_escape(&student_kelas),
+        payment_method_name = html_escape(&payment_method_name),
+        rows_html = rows_html,
+        total_amount_formatted = format_idr(total_amount),
+        notes_tag = notes_tag,
+        today_date_str = today_date_str,
+        stamp_tag = stamp_tag,
+        cashier_name = html_escape(if cashier_name.is_empty() { "Petugas Kasir" } else { cashier_name }),
+    );
+
+    let tmp_path = std::env::temp_dir().join(format!("kwitansi_{}.html", trx_code));
+    std::fs::write(&tmp_path, full_html).map_err(|e| format!("Gagal menyimpan kwitansi sementara: {}", e))?;
+
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(&tmp_path).spawn();
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("cmd").args(["/C", "start", "", tmp_path.to_str().unwrap_or("")]).spawn();
+    #[cfg(target_os = "linux")]
+    let _ = std::process::Command::new("xdg-open").arg(&tmp_path).spawn();
+
+    Ok(())
+}
 
 fn get_active_user_id(conn: &Connection) -> String {
     conn.query_row("SELECT id FROM users LIMIT 1;", [], |r| r.get(0))
@@ -1082,7 +1584,7 @@ fn refresh_today_payments_ui(app: &AppWindow, conn_arc: &Arc<Mutex<Connection>>)
 
         let mut list = Vec::new();
         if let Ok(mut stmt) = conn.prepare(
-            "SELECT p.transaction_code, s.nama, p.total_amount, p.payment_method_id, p.created_at 
+            "SELECT p.transaction_code, s.nama, p.total_amount, COALESCE(p.payment_method_name, p.payment_method_id, 'Tunai'), p.created_at 
              FROM payments p
              JOIN students s ON p.student_id = s.id
              WHERE p.created_at LIKE ?1
@@ -1096,10 +1598,9 @@ fn refresh_today_payments_ui(app: &AppWindow, conn_arc: &Arc<Mutex<Connection>>)
                 let created: String = row.get(4)?;
 
                 let m_label = match meth.as_deref() {
-                    Some("cash") => "Tunai",
-                    Some("transfer") => "Transfer",
-                    Some("tabungan") => "Tabungan",
-                    _ => "Lainnya",
+                    Some(s) if s.eq_ignore_ascii_case("transfer") || s.contains("Transfer") => "Transfer",
+                    Some(s) if s.eq_ignore_ascii_case("tabungan") || s.contains("Tabungan") => "Tabungan",
+                    _ => "Tunai",
                 };
 
                 let time_only = created.split(' ').nth(1).unwrap_or(&created).to_string();
@@ -1127,40 +1628,40 @@ fn refresh_history_tab_ui(app: &AppWindow, conn_arc: &Arc<Mutex<Connection>>, se
         let q = format!("%{}%", search.trim());
 
         if let Ok(mut stmt) = conn.prepare(
-            "SELECT p.id, p.transaction_code, s.nama, c.name, p.total_amount, p.payment_method_id, p.created_at, p.is_pushed 
+            "SELECT p.id, p.transaction_code, s.nama, COALESCE(s.kelas, c.name, '-'), p.total_amount, COALESCE(p.payment_method_name, 'Tunai'), p.created_at, COALESCE(p.sync_status, 'synced'), COALESCE(p.notes, '')
              FROM payments p
              JOIN students s ON p.student_id = s.id
              LEFT JOIN classrooms c ON s.classroom_id = c.id
              WHERE (p.transaction_code LIKE ?1 OR s.nama LIKE ?1)
-             ORDER BY p.created_at DESC LIMIT 50;"
+             ORDER BY p.created_at DESC LIMIT 100;"
         ) {
             if let Ok(rows) = stmt.query_map([&q], |row| {
                 let id: String = row.get(0)?;
                 let code: String = row.get(1)?;
                 let name: String = row.get(2)?;
-                let kelas: Option<String> = row.get(3)?;
+                let kelas: String = row.get(3)?;
                 let amt: f64 = row.get(4)?;
                 let meth: String = row.get(5)?;
                 let created: String = row.get(6)?;
-                let pushed: i32 = row.get(7)?;
+                let sync_status: String = row.get(7)?;
+                let notes: String = row.get(8)?;
 
                 let m_label = match meth.as_str() {
-                    "cash" => "Tunai",
-                    "transfer" => "Transfer",
-                    "tabungan" => "Tabungan",
-                    _ => "Lainnya",
+                    s if s.eq_ignore_ascii_case("transfer") || s.contains("Transfer") => "Transfer",
+                    s if s.eq_ignore_ascii_case("tabungan") || s.contains("Tabungan") => "Tabungan",
+                    _ => "Tunai",
                 };
 
                 Ok(HistoryRecord {
                     id: id.into(),
                     transaction_code: code.into(),
                     student_name: name.into(),
-                    student_class: kelas.unwrap_or_else(|| "-".into()).into(),
+                    student_class: kelas.into(),
                     payment_method: m_label.into(),
                     total_amount: format_idr(amt).into(),
-                    notes: "".into(),
+                    notes: notes.into(),
                     created_at: created.into(),
-                    sync_status: if pushed == 1 { "synced".into() } else { "pending".into() },
+                    sync_status: sync_status.into(),
                 })
             }) {
                 for r in rows.flatten() {

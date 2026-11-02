@@ -131,6 +131,7 @@ export component PosView inherits Rectangle {
     in property <string> cart-total: "Rp 0";
     in property <int> selected-payment-method: 0; // 0: Tunai, 1: Transfer, 2: Tabungan
     in property <bool> is-processing-payment: false;
+    in property <bool> savings-enabled: false;
 
     callback toggle-assignment-selection(string);
     callback remove-cart-item(string);
@@ -289,7 +290,7 @@ export component PosView inherits Rectangle {
                                 spacing: 10px;
 
                                 // Badge Saldo Tabungan
-                                Rectangle {
+                                if root.savings-enabled: Rectangle {
                                     height: 32px;
                                     background: Theme.emerald-light;
                                     border-color: #a7f3d0;
@@ -809,7 +810,7 @@ export component PosView inherits Rectangle {
                                 }
                             }
 
-                            Rectangle {
+                            if root.savings-enabled: Rectangle {
                                 horizontal-stretch: 1;
                                 background: root.selected-payment-method == 2 ? Theme.primary : Theme.bg-secondary;
                                 border-color: root.selected-payment-method == 2 ? Theme.primary : Theme.border;
@@ -889,6 +890,24 @@ export component PosView inherits Rectangle {
                         font-weight: 700;
                         color: Theme.text-main;
                         vertical-alignment: center;
+                    }
+                }
+
+                // Table Columns Header
+                Rectangle {
+                    height: 26px;
+                    background: Theme.bg-secondary;
+                    border-radius: 4px;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 10px;
+                        Text { width: 140px; text: "No. Transaksi"; font-size: 10px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
+                        Text { horizontal-stretch: 1; text: "Nama Siswa"; font-size: 10px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
+                        Text { width: 80px; text: "Metode"; font-size: 10px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
+                        Text { width: 110px; text: "Total"; font-size: 10px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
+                        Text { width: 70px; text: "Waktu"; font-size: 10px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
+                        Text { width: 24px; text: "Aksi"; font-size: 10px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: center; vertical-alignment: center; }
                     }
                 }
 

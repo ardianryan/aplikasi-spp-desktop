@@ -17,12 +17,18 @@ export struct StudentSearchResult {
 }
 
 export component AppWindow inherits Window {
-    title: "Partisipasi Sekolah - Kasir SPP Native v0.2.0";
+    title: root.window-title;
     preferred-width: 1280px;
     preferred-height: 800px;
     min-width: 1024px;
     min-height: 700px;
     background: Theme.bg-primary;
+
+    // Window Branding & Feature Flags
+    in property <string> window-title: "Partisipasi Sekolah Desktop v0.2.0";
+    in property <bool> savings-enabled: false;
+    in property <bool> has-school-logo: false;
+    in property <image> school-logo;
 
     // Navigation & Auth State
     in-out property <bool> is-logged-in: false;
@@ -107,6 +113,7 @@ export component AppWindow inherits Window {
     callback deposit-savings(string, string);
     callback withdraw-savings(string, string);
     callback refresh-history();
+    callback history-search-changed(string);
     callback refresh-reports();
     callback print-receipt(string);
     callback test-sync-connection(string, string);
@@ -137,6 +144,9 @@ export component AppWindow inherits Window {
             user-role: root.user-role;
             is-online: root.is-online;
             pending-sync-count: root.pending-sync-count;
+            savings-enabled: root.savings-enabled;
+            has-school-logo: root.has-school-logo;
+            school-logo: root.school-logo;
             tab-selected(idx) => {
                 root.active-tab = idx;
                 root.tab-changed(idx);
@@ -183,6 +193,7 @@ export component AppWindow inherits Window {
                     cart-total: root.cart-total;
                     selected-payment-method: root.selected-payment-method;
                     is-processing-payment: root.is-processing-payment;
+                    savings-enabled: root.savings-enabled;
 
                     toggle-assignment-selection(id) => { root.toggle-assignment(id); }
                     remove-cart-item(id) => { root.remove-cart(id); }
@@ -206,6 +217,7 @@ export component AppWindow inherits Window {
                 if root.active-tab == 2: HistoryView {
                     records: root.history-records;
                     refresh-clicked => { root.refresh-history(); }
+                    search-changed(q) => { root.history-search-changed(q); }
                     print-receipt(code) => { root.print-receipt(code); }
                 }
 
@@ -320,34 +332,48 @@ export component AppWindow inherits Window {
                                     border-radius: 6px;
 
                                     HorizontalLayout {
-                                        padding-left: 12px;
-                                        padding-right: 12px;
+                                        padding-left: 14px;
+                                        padding-right: 14px;
                                         spacing: 12px;
-                                        alignment: center;
 
                                         VerticalLayout {
                                             alignment: center;
-                                            spacing: 1px;
+                                            spacing: 2px;
                                             horizontal-stretch: 1;
                                             Text {
                                                 text: res.nama;
                                                 font-size: 13px;
                                                 font-weight: 700;
                                                 color: Theme.text-main;
+                                                horizontal-alignment: left;
                                             }
                                             Text {
                                                 text: "NIS: " + res.nis + " | Kelas: " + res.kelas;
                                                 font-size: 11px;
                                                 color: Theme.text-muted;
+                                                horizontal-alignment: left;
                                             }
                                         }
 
-                                        Text {
-                                            text: "Pilih";
-                                            font-size: 11px;
-                                            font-weight: 700;
-                                            color: Theme.primary;
-                                            vertical-alignment: center;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            Rectangle {
+                                                height: 26px;
+                                                background: Theme.primary;
+                                                border-radius: 4px;
+                                                HorizontalLayout {
+                                                    padding-left: 12px;
+                                                    padding-right: 12px;
+                                                    alignment: center;
+                                                    Text {
+                                                        text: "Pilih";
+                                                        font-size: 11px;
+                                                        font-weight: 700;
+                                                        color: white;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
 

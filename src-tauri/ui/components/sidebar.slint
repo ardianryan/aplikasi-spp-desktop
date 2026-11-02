@@ -76,6 +76,9 @@ export component Sidebar inherits Rectangle {
     in property <string> user-role: "Petugas Kasir";
     in property <bool> is-online: false;
     in property <string> pending-sync-count: "0";
+    in property <bool> savings-enabled: false;
+    in property <bool> has-school-logo: false;
+    in property <image> school-logo;
 
     callback tab-selected(int);
     callback logout-clicked();
@@ -88,7 +91,26 @@ export component Sidebar inherits Rectangle {
         HorizontalLayout {
             spacing: 12px;
             alignment: start;
-            Rectangle {
+
+            if root.has-school-logo: Rectangle {
+                width: 38px;
+                height: 38px;
+                background: white;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 8px;
+                clip: true;
+                Image {
+                    source: root.school-logo;
+                    width: 34px;
+                    height: 34px;
+                    image-fit: contain;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+
+            if !root.has-school-logo: Rectangle {
                 width: 38px;
                 height: 38px;
                 background: Theme.primary;
@@ -113,8 +135,9 @@ export component Sidebar inherits Rectangle {
                     color: Theme.primary;
                 }
                 Text {
-                    text: "Sistem Kasir SPP v0.2.0";
+                    text: "v0.2.0";
                     font-size: 11px;
+                    font-weight: 500;
                     color: Theme.text-muted;
                 }
             }
@@ -137,7 +160,7 @@ export component Sidebar inherits Rectangle {
                 clicked => { root.tab-selected(0); }
             }
 
-            SidebarItem {
+            if root.savings-enabled: SidebarItem {
                 title: "Buku Tabungan";
                 icon-src: @image-url("../assets/icons/savings.svg");
                 is-active: root.active-tab == 1;
