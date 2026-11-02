@@ -22,15 +22,18 @@ export component SyncView inherits Rectangle {
 
         HorizontalLayout {
             height: 28px;
-            spacing: 8px;
+            spacing: 10px;
             alignment: start;
-            Image {
-                source: @image-url("../assets/icons/sync.svg");
-                width: 18px;
-                height: 18px;
-                image-fit: contain;
-                colorize: Theme.primary;
-                y: 5px;
+            VerticalLayout {
+                alignment: center;
+                width: 20px;
+                Image {
+                    source: @image-url("../assets/icons/sync.svg");
+                    width: 18px;
+                    height: 18px;
+                    image-fit: contain;
+                    colorize: Theme.primary;
+                }
             }
             Text {
                 text: "Pengaturan & Sinkronisasi Server Pusat";

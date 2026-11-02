@@ -28,15 +28,18 @@ export component HistoryView inherits Rectangle {
             height: 36px;
             alignment: space-between;
             HorizontalLayout {
-                spacing: 8px;
+                spacing: 10px;
                 alignment: start;
-                Image {
-                    source: @image-url("../assets/icons/history.svg");
-                    width: 18px;
-                    height: 18px;
-                    image-fit: contain;
-                    colorize: Theme.primary;
-                    y: 9px;
+                VerticalLayout {
+                    alignment: center;
+                    width: 20px;
+                    Image {
+                        source: @image-url("../assets/icons/history.svg");
+                        width: 18px;
+                        height: 18px;
+                        image-fit: contain;
+                        colorize: Theme.primary;
+                    }
                 }
                 Text {
                     text: "Riwayat Transaksi Keseluruhan";
@@ -59,11 +62,16 @@ export component HistoryView inherits Rectangle {
                 HorizontalLayout {
                     alignment: center;
                     spacing: 6px;
-                    Image {
-                        source: @image-url("../assets/icons/sync.svg");
-                        width: 12px;
-                        height: 12px;
-                        image-fit: contain;
+                    VerticalLayout {
+                        alignment: center;
+                        width: 14px;
+                        Image {
+                            source: @image-url("../assets/icons/sync.svg");
+                            width: 12px;
+                            height: 12px;
+                            image-fit: contain;
+                            colorize: white;
+                        }
                     }
                     Text {
                         text: "Segarkan";
