@@ -230,4 +230,20 @@ fn test_e2e_auth_login_logout_flow() {
     ).unwrap();
     assert_eq!(count_after_logout, 0, "Tabel user_tokens harus kosong setelah logout");
     println!("✅ Logout berhasil: user_tokens dibersihkan sepenuhnya (count = 0).");
+
+    println!("=== 4. E2E: Uji Pengaturan Server Host Sebelum Login ===");
+    let custom_server = "https://spp-staging.sekolah.sch.id";
+    conn.execute(
+        "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_url', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+        [custom_server],
+    ).expect("Harus berhasil menyimpan api_url baru ke settings");
+
+    let saved_server: String = conn.query_row(
+        "SELECT value FROM settings WHERE key = 'api_url';",
+        [],
+        |r| r.get(0)
+    ).unwrap();
+    assert_eq!(saved_server, custom_server, "Endpoint server di settings harus terbarui sesuai input pengguna");
+    println!("✅ Pengaturan server host sebelum login berhasil terverifikasi: {}", saved_server);
 }

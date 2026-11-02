@@ -109,6 +109,7 @@ export component AppWindow inherits Window {
     callback print-receipt(string);
     callback test-sync-connection(string, string);
     callback save-sync-settings(string, string);
+    callback save-server-url(string);
     callback sso-login();
     callback code-login(string);
     callback pin-login(string);
@@ -122,6 +123,7 @@ export component AppWindow inherits Window {
         sso-login-clicked => { root.sso-login(); }
         code-login-submitted(c) => { root.code-login(c); }
         pin-login-submitted(p) => { root.pin-login(p); }
+        save-server-url(u) => { root.save-server-url(u); }
     }
 
     // 1. Terminal Kasir Utama (Bila kasir sudah masuk / terautentikasi)

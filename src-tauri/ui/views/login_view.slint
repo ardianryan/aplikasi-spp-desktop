@@ -8,13 +8,15 @@ export component LoginView inherits Rectangle {
     in property <string> error-message: "";
     in property <bool> is-loading: false;
 
-    out property <int> login-mode: 0; // 0: SSO/Code, 1: PIN
+    out property <int> login-mode: 0; // 0: SSO/Code, 1: PIN, 2: Server Host Config
     property <string> code-input: "";
     property <string> pin-input: "";
+    property <string> server-input: root.api-url;
 
     callback sso-login-clicked();
     callback code-login-submitted(string);
     callback pin-login-submitted(string);
+    callback save-server-url(string);
 
     VerticalLayout {
         alignment: center;
@@ -72,15 +74,22 @@ export component LoginView inherits Rectangle {
                             horizontal-alignment: center;
                         }
 
-                        // Connection Badge
+                        // Connection Badge (Clickable to change Server Host)
                         HorizontalLayout {
                             alignment: center;
                             Rectangle {
                                 height: 26px;
-                                background: #ecfdf5;
+                                background: touch-badge.has-hover ? #d1fae5 : #ecfdf5;
                                 border-color: #a7f3d0;
                                 border-width: 1px;
                                 border-radius: 13px;
+                                touch-badge := TouchArea {
+                                    clicked => {
+                                        root.server-input = root.api-url;
+                                        root.login-mode = 2;
+                                    }
+                                    mouse-cursor: pointer;
+                                }
                                 HorizontalLayout {
                                     padding-left: 12px;
                                     padding-right: 12px;
@@ -289,6 +298,28 @@ export component LoginView inherits Rectangle {
                             color: Theme.text-muted;
                             horizontal-alignment: center;
                         }
+
+                        // Link Ubah Sambungan Server
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                height: 26px;
+                                touch-link-srv0 := TouchArea {
+                                    clicked => {
+                                        root.server-input = root.api-url;
+                                        root.login-mode = 2;
+                                    }
+                                    mouse-cursor: pointer;
+                                }
+                                Text {
+                                    text: "Ubah Pengaturan Sambungan Server";
+                                    font-size: 11px;
+                                    color: touch-link-srv0.has-hover ? Theme.primary-hover : Theme.primary;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
                     }
 
                     // MODE 1: Masuk dengan PIN Kasir
@@ -376,6 +407,130 @@ export component LoginView inherits Rectangle {
                                 horizontal-alignment: center;
                                 vertical-alignment: center;
                             }
+                        }
+
+                        // Link Ubah Sambungan Server
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                height: 26px;
+                                touch-link-srv1 := TouchArea {
+                                    clicked => {
+                                        root.server-input = root.api-url;
+                                        root.login-mode = 2;
+                                    }
+                                    mouse-cursor: pointer;
+                                }
+                                Text {
+                                    text: "Ubah Pengaturan Sambungan Server";
+                                    font-size: 11px;
+                                    color: touch-link-srv1.has-hover ? Theme.primary-hover : Theme.primary;
+                                    font-weight: 600;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    // MODE 2: Ubah Sambungan Peladen / Server Host
+                    if root.login-mode == 2: VerticalLayout {
+                        spacing: 16px;
+
+                        VerticalLayout {
+                            spacing: 4px;
+                            Text {
+                                text: "Ubah Sambungan Peladen";
+                                font-size: 16px;
+                                font-weight: 700;
+                                color: Theme.primary;
+                                horizontal-alignment: center;
+                            }
+                            Text {
+                                text: "Perbarui alamat web peladen sekolah untuk terminal kasir ini.";
+                                font-size: 12px;
+                                color: Theme.text-muted;
+                                horizontal-alignment: center;
+                            }
+                        }
+
+                        VerticalLayout {
+                            spacing: 6px;
+                            Text {
+                                text: "Alamat Web Sekolah (Endpoint Host)";
+                                font-size: 12px;
+                                font-weight: 600;
+                                color: Theme.text-main;
+                            }
+                            Rectangle {
+                                height: 44px;
+                                background: #f8fafc;
+                                border-color: Theme.border;
+                                border-width: 1px;
+                                border-radius: 8px;
+                                HorizontalLayout {
+                                    padding-left: 14px;
+                                    padding-right: 14px;
+                                    TextInput {
+                                        width: 100%;
+                                        height: 100%;
+                                        text <=> root.server-input;
+                                        font-size: 13px;
+                                        color: Theme.text-main;
+                                        vertical-alignment: center;
+                                        accepted => {
+                                            root.save-server-url(root.server-input);
+                                            root.login-mode = 0;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            height: 42px;
+                            background: touch-save-srv.has-hover ? Theme.primary-hover : Theme.primary;
+                            border-radius: 8px;
+                            touch-save-srv := TouchArea {
+                                clicked => {
+                                    root.save-server-url(root.server-input);
+                                    root.login-mode = 0;
+                                }
+                                mouse-cursor: pointer;
+                            }
+                            Text {
+                                text: "Simpan & Hubungkan";
+                                color: white;
+                                font-size: 13px;
+                                font-weight: 700;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        Rectangle {
+                            height: 36px;
+                            background: touch-cancel-srv.has-hover ? #f1f5f9 : transparent;
+                            border-radius: 8px;
+                            touch-cancel-srv := TouchArea {
+                                clicked => { root.login-mode = 0; }
+                                mouse-cursor: pointer;
+                            }
+                            Text {
+                                text: "Batal";
+                                color: Theme.text-muted;
+                                font-size: 12px;
+                                font-weight: 600;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        Text {
+                            text: "*Kunci otorisasi terminal kasir akan disinkronkan secara otomatis oleh peladen saat Anda masuk.";
+                            font-size: 11px;
+                            color: Theme.text-muted;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
                         }
                     }
                 }

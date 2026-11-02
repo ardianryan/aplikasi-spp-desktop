@@ -598,6 +598,40 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // L. Save Server Host Configuration (from Login View before login)
+    {
+        let conn_arc = Arc::clone(&conn_arc);
+        let app_weak = app_weak.clone();
+        app.on_save_server_url(move |raw_url_slint| {
+            let mut raw_url = raw_url_slint.to_string().trim().to_string();
+            if raw_url.is_empty() {
+                if let Some(app) = app_weak.upgrade() {
+                    app.set_login_error("Alamat peladen server tidak boleh kosong.".into());
+                }
+                return;
+            }
+            if !raw_url.starts_with("http://") && !raw_url.starts_with("https://") {
+                raw_url = format!("http://{}", raw_url);
+            }
+            let clean_url = raw_url.trim_end_matches('/').to_string();
+
+            if let Ok(conn) = conn_arc.lock() {
+                let _ = conn.execute(
+                    "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_url', ?)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                    [&clean_url],
+                );
+            }
+
+            if let Some(app) = app_weak.upgrade() {
+                app.set_api_endpoint_url(clean_url.clone().into());
+                app.set_sync_base_url(clean_url.clone().into());
+                app.set_login_error("".into());
+            }
+            println!("[INFO] Alamat endpoint peladen berhasil disimpan: {}", clean_url);
+        });
+    }
+
     {
         let conn_arc = Arc::clone(&conn_arc);
         app.on_sso_login(move || {
