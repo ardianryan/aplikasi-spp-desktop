@@ -71,5 +71,7 @@ fn main() {
     #[cfg(target_os = "windows")]
     println!("cargo:rustc-link-lib=user32");
 
+    slint_build::compile("ui/appwindow.slint").unwrap();
+
     tauri_build::build();
 }

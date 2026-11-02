@@ -1,0 +1,292 @@
+import { Theme } from "theme.slint";
+import { Sidebar } from "components/sidebar.slint";
+import { Header } from "components/header.slint";
+import { PosView, StudentData, BillSummaryData, AssignmentData, CartItemData, TodayPaymentData } from "views/pos_view.slint";
+import { SavingsView, SavingsHistoryData } from "views/savings_view.slint";
+import { HistoryView, HistoryRecord } from "views/history_view.slint";
+import { ReportsView, CashierSummaryRecord } from "views/reports_view.slint";
+import { SyncView } from "views/sync_view.slint";
+
+export struct StudentSearchResult {
+    id: string,
+    nama: string,
+    nis: string,
+    nisn: string,
+    kelas: string,
+}
+
+export component AppWindow inherits Window {
+    title: "Partisipasi Sekolah - Kasir SPP Native v0.2.0";
+    preferred-width: 1280px;
+    preferred-height: 800px;
+    min-width: 1024px;
+    min-height: 700px;
+    background: Theme.bg-primary;
+
+    // Navigation & Auth State
+    in-out property <int> active-tab: 0;
+    in property <string> user-name: "Kasir Loket 1";
+    in property <string> user-role: "Petugas Kasir";
+    in property <bool> is-online: false;
+    in property <string> pending-sync-count: "0";
+    in property <string> active-academic-year: "2024/2025";
+    in property <bool> is-syncing: false;
+
+    // Search state
+    in-out property <string> search-query: "";
+    in property <bool> show-search-results: false;
+    in property <[StudentSearchResult]> search-results: [];
+
+    // POS State
+    in property <StudentData> current-student: {
+        id: "",
+        nis: "-",
+        nisn: "-",
+        nama: "Pilih / Cari Siswa Di Atas",
+        kelas: "-",
+        savings_balance: "Rp 0"
+    };
+    in property <BillSummaryData> bill-summary: {
+        total_tagihan: "Rp 0",
+        total_dibayar: "Rp 0",
+        total_keringanan: "Rp 0",
+        total_tunggakan: "Rp 0"
+    };
+    in property <[AssignmentData]> assignments: [];
+    in property <[CartItemData]> cart-items: [];
+    in property <[TodayPaymentData]> today-payments: [];
+    in property <string> cart-total: "Rp 0";
+    in property <int> selected-payment-method: 0;
+    in property <bool> is-processing-payment: false;
+
+    // Savings State
+    in property <[SavingsHistoryData]> savings-history: [];
+    in property <bool> is-processing-savings: false;
+
+    // History State
+    in property <[HistoryRecord]> history-records: [];
+
+    // Reports State
+    in property <string> grand-total: "Rp 0";
+    in property <string> cash-total: "Rp 0";
+    in property <string> transfer-total: "Rp 0";
+    in property <string> savings-total: "Rp 0";
+    in property <[CashierSummaryRecord]> cashier-summaries: [];
+
+    // Sync State
+    in-out property <string> sync-base-url: "https://";
+    in-out property <string> sync-api-token: "";
+    in property <string> sync-last-time: "Belum pernah sinkron";
+    in property <string> sync-pending-count: "0";
+    in property <string> sync-message: "";
+    in property <bool> is-testing-connection: false;
+    in property <string> test-connection-result: "";
+
+    // Callbacks to Rust Controller
+    callback tab-changed(int);
+    callback search-changed(string);
+    callback student-selected(string);
+    callback toggle-assignment(string);
+    callback remove-cart(string);
+    callback set-payment-method(int);
+    callback process-payment();
+    callback trigger-sync();
+    callback deposit-savings(string, string);
+    callback withdraw-savings(string, string);
+    callback refresh-history();
+    callback refresh-reports();
+    callback print-receipt(string);
+    callback test-sync-connection(string, string);
+    callback save-sync-settings(string, string);
+    callback logout();
+
+    HorizontalLayout {
+        // 1. Sidebar Navigasi Kiri (260px)
+        Sidebar {
+            active-tab: root.active-tab;
+            user-name: root.user-name;
+            user-role: root.user-role;
+            is-online: root.is-online;
+            pending-sync-count: root.pending-sync-count;
+            tab-selected(idx) => {
+                root.active-tab = idx;
+                root.tab-changed(idx);
+            }
+            logout-clicked => {
+                root.logout();
+            }
+        }
+
+        // 2. Main Content Right Panel (Header + Active View)
+        VerticalLayout {
+            horizontal-stretch: 1;
+
+            // Header Atas (70px)
+            Header {
+                search-query <=> root.search-query;
+                active-academic-year: root.active-academic-year;
+                is-syncing: root.is-syncing;
+                search-changed(q) => {
+                    root.search-changed(q);
+                }
+                search-submitted(q) => {
+                    root.search-changed(q);
+                }
+                trigger-sync-clicked => {
+                    root.trigger-sync();
+                }
+            }
+
+            // View Stack Container
+            Rectangle {
+                vertical-stretch: 1;
+                background: Theme.bg-primary;
+
+                if root.active-tab == 0: PosView {
+                    current-student: root.current-student;
+                    summary: root.bill-summary;
+                    assignments: root.assignments;
+                    cart-items: root.cart-items;
+                    today-payments: root.today-payments;
+                    cart-total: root.cart-total;
+                    selected-payment-method: root.selected-payment-method;
+                    is-processing-payment: root.is-processing-payment;
+
+                    toggle-assignment-selection(id) => { root.toggle-assignment(id); }
+                    remove-cart-item(id) => { root.remove-cart(id); }
+                    select-payment-method(m) => { root.set-payment-method(m); }
+                    process-payment-clicked => { root.process-payment(); }
+                    print-receipt-clicked(code) => { root.print-receipt(code); }
+                }
+
+                if root.active-tab == 1: SavingsView {
+                    student-name: root.current-student.nama;
+                    student-class: root.current-student.kelas;
+                    current-balance: root.current-student.savings_balance;
+                    history: root.savings-history;
+                    is-processing: root.is-processing-savings;
+
+                    deposit-clicked(amt, note) => { root.deposit-savings(amt, note); }
+                    withdraw-clicked(amt, note) => { root.withdraw-savings(amt, note); }
+                }
+
+                if root.active-tab == 2: HistoryView {
+                    records: root.history-records;
+                    refresh-clicked => { root.refresh-history(); }
+                    print-receipt(code) => { root.print-receipt(code); }
+                }
+
+                if root.active-tab == 3: ReportsView {
+                    grand-total: root.grand-total;
+                    cash-total: root.cash-total;
+                    transfer-total: root.transfer-total;
+                    savings-total: root.savings-total;
+                    cashier-summaries: root.cashier-summaries;
+                    refresh-reports => { root.refresh-reports(); }
+                }
+
+                if root.active-tab == 4: SyncView {
+                    base-url <=> root.sync-base-url;
+                    api-token <=> root.sync-api-token;
+                    last-sync-time: root.sync-last-time;
+                    pending-records-count: root.sync-pending-count;
+                    sync-message: root.sync-message;
+                    is-syncing: root.is-syncing;
+                    is-testing: root.is-testing-connection;
+                    test-result: root.test-connection-result;
+
+                    test-connection-clicked(url, tok) => { root.test-sync-connection(url, tok); }
+                    save-settings-clicked(url, tok) => { root.save-sync-settings(url, tok); }
+                    trigger-sync-clicked => { root.trigger-sync(); }
+                }
+
+                // Search Results Dropdown Popup (bila ada hasil search)
+                if root.show-search-results: Rectangle {
+                    x: 24px;
+                    y: 10px;
+                    width: 480px;
+                    height: 280px;
+                    background: Theme.bg-card;
+                    border-color: Theme.primary;
+                    border-width: 2px;
+                    border-radius: 8px;
+                    drop-shadow-blur: 16px;
+                    drop-shadow-color: #00000025;
+
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 6px;
+
+                        HorizontalLayout {
+                            alignment: space-between;
+                            Text {
+                                text: "Hasil Pencarian Siswa:";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: Theme.text-muted;
+                            }
+                            Text {
+                                text: "Pilih siswa di bawah";
+                                font-size: 11px;
+                                color: Theme.primary;
+                            }
+                        }
+
+                        Rectangle { height: 1px; background: Theme.border; }
+
+                        Flickable {
+                            vertical-stretch: 1;
+                            VerticalLayout {
+                                spacing: 4px;
+                                for res in root.search-results: Rectangle {
+                                    height: 48px;
+                                    background: touch-res.has-hover ? Theme.primary-light : Theme.bg-secondary;
+                                    border-radius: 6px;
+
+                                    HorizontalLayout {
+                                        padding-left: 12px;
+                                        padding-right: 12px;
+                                        spacing: 12px;
+                                        alignment: center;
+
+                                        VerticalLayout {
+                                            alignment: center;
+                                            spacing: 2px;
+                                            horizontal-stretch: 1;
+                                            Text {
+                                                text: res.nama;
+                                                font-size: 13px;
+                                                font-weight: 700;
+                                                color: Theme.text-main;
+                                            }
+                                            Text {
+                                                text: "NIS: " + res.nis + " | Kelas: " + res.kelas;
+                                                font-size: 11px;
+                                                color: Theme.text-muted;
+                                            }
+                                        }
+
+                                        Text {
+                                            text: "Pilih ➔";
+                                            font-size: 12px;
+                                            font-weight: 700;
+                                            color: Theme.primary;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    touch-res := TouchArea {
+                                        clicked => {
+                                            root.student-selected(res.id);
+                                        }
+                                        mouse-cursor: pointer;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

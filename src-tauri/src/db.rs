@@ -41,6 +41,50 @@ fn load_cipher_key(db_path: &std::path::Path) -> String {
     seed
 }
 
+pub fn init_db_standalone() -> Result<Connection, String> {
+    let base_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let mut db_path = base_dir.join("me.ppti.partisipasi-sekolah");
+
+    fs::create_dir_all(&db_path)
+        .map_err(|e| format!("Gagal membuat direktori data: {}", e))?;
+
+    db_path.push("partisipasi.db");
+    println!("Database path (standalone): {:?}", db_path);
+
+    let cipher_key = load_cipher_key(&db_path);
+
+    let conn = Connection::open(&db_path)
+        .map_err(|e| format!("Gagal membuka database SQLite: {}", e))?;
+
+    conn.execute_batch(&format!("PRAGMA key = '{}';", cipher_key.replace("'", "''")))
+        .map_err(|e| format!("Gagal mengaktifkan SQLCipher key: {}", e))?;
+
+    let test_read = conn.query_row("SELECT count(*) FROM sqlite_master;", [], |_| Ok(()));
+    if let Err(e) = test_read {
+        let err_str = e.to_string();
+        if err_str.contains("file is not a database") || err_str.contains("NOTADB") {
+            println!("DB lama tidak terenkripsi, salah passphrase, atau corrupt. Membuat ulang database terenkripsi baru...");
+            drop(conn);
+            let _ = fs::remove_file(&db_path);
+
+            let conn_new = Connection::open(&db_path)
+                .map_err(|e| format!("Gagal membuka database SQLite baru: {}", e))?;
+            conn_new.execute_batch(&format!("PRAGMA key = '{}';", cipher_key.replace("'", "''")))
+                .map_err(|e| format!("Gagal mengaktifkan SQLCipher key baru: {}", e))?;
+            conn_new.execute("PRAGMA foreign_keys = ON;", [])
+                .map_err(|e| format!("Gagal mengaktifkan PRAGMA foreign_keys: {}", e))?;
+            return Ok(conn_new);
+        }
+        return Err(format!("Gagal memverifikasi akses database SQLCipher: {}", e));
+    }
+
+    conn.execute("PRAGMA foreign_keys = ON;", [])
+        .map_err(|e| format!("Gagal mengaktifkan PRAGMA foreign_keys: {}", e))?;
+
+    Ok(conn)
+}
+
 pub fn init_db(app_handle: &AppHandle) -> Result<Connection, String> {
     // Get the standard app data directory
     let mut db_path = app_handle.path().app_data_dir()

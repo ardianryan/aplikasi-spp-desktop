@@ -1,0 +1,240 @@
+import { Theme } from "../theme.slint";
+
+export component SyncView inherits Rectangle {
+    background: Theme.bg-primary;
+
+    in-out property <string> base-url: "https://";
+    in-out property <string> api-token: "";
+    in property <string> last-sync-time: "Belum pernah sinkron";
+    in property <string> pending-records-count: "0";
+    in property <string> sync-message: "";
+    in property <bool> is-syncing: false;
+    in property <bool> is-testing: false;
+    in property <string> test-result: "";
+
+    callback test-connection-clicked(string, string);
+    callback save-settings-clicked(string, string);
+    callback trigger-sync-clicked();
+
+    VerticalLayout {
+        padding: 20px;
+        spacing: 16px;
+
+        Text {
+            text: "Pengaturan & Status Sinkronisasi";
+            font-size: 20px;
+            font-weight: 700;
+            color: Theme.text-main;
+        }
+
+        // Form Pengaturan Koneksi
+        Rectangle {
+            height: 260px;
+            background: Theme.bg-card;
+            border-color: Theme.border;
+            border-width: 1px;
+            border-radius: 10px;
+
+            VerticalLayout {
+                padding: 20px;
+                spacing: 14px;
+
+                Text {
+                    text: "Konfigurasi Server Cloud (Pusat)";
+                    font-size: 15px;
+                    font-weight: 700;
+                    color: Theme.text-main;
+                }
+
+                VerticalLayout {
+                    spacing: 4px;
+                    Text { text: "URL Server API:"; font-size: 12px; color: Theme.text-muted; }
+                    Rectangle {
+                        height: 40px;
+                        background: Theme.bg-primary;
+                        border-color: Theme.border;
+                        border-width: 1px;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            TextInput {
+                                text <=> root.base-url;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    spacing: 4px;
+                    Text { text: "Token Akses Kasir / Pairing Key:"; font-size: 12px; color: Theme.text-muted; }
+                    Rectangle {
+                        height: 40px;
+                        background: Theme.bg-primary;
+                        border-color: Theme.border;
+                        border-width: 1px;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            TextInput {
+                                text <=> root.api-token;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 12px;
+                    alignment: start;
+
+                    Rectangle {
+                        width: 140px;
+                        height: 38px;
+                        background: Theme.primary-light;
+                        border-radius: 6px;
+                        TouchArea {
+                            enabled: !root.is-testing;
+                            clicked => { root.test-connection-clicked(root.base-url, root.api-token); }
+                            mouse-cursor: pointer;
+                        }
+                        Text {
+                            text: root.is-testing ? "Menguji..." : "🔌 Uji Koneksi";
+                            color: Theme.on-primary-light;
+                            font-size: 12px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Rectangle {
+                        width: 150px;
+                        height: 38px;
+                        background: Theme.primary;
+                        border-radius: 6px;
+                        TouchArea {
+                            clicked => { root.save-settings-clicked(root.base-url, root.api-token); }
+                            mouse-cursor: pointer;
+                        }
+                        Text {
+                            text: "💾 Simpan Konfigurasi";
+                            color: white;
+                            font-size: 12px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    if root.test-result != "": Text {
+                        text: root.test-result;
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: Theme.emerald;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Status Antrean & Sinkronisasi
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.bg-card;
+            border-color: Theme.border;
+            border-width: 1px;
+            border-radius: 10px;
+
+            VerticalLayout {
+                padding: 20px;
+                spacing: 14px;
+
+                Text {
+                    text: "Status Failover & Antrean Data";
+                    font-size: 15px;
+                    font-weight: 700;
+                    color: Theme.text-main;
+                }
+
+                HorizontalLayout {
+                    spacing: 14px;
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: 70px;
+                        background: Theme.bg-secondary;
+                        border-radius: 8px;
+                        VerticalLayout {
+                            padding: 12px;
+                            spacing: 4px;
+                            Text { text: "Antrean Belum Terkirim (Pending Push):"; font-size: 12px; color: Theme.text-muted; }
+                            Text { text: root.pending-records-count + " Catatan Transaksi"; font-size: 16px; font-weight: 800; color: root.pending-records-count == "0" ? Theme.emerald : Theme.rose; }
+                        }
+                    }
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: 70px;
+                        background: Theme.bg-secondary;
+                        border-radius: 8px;
+                        VerticalLayout {
+                            padding: 12px;
+                            spacing: 4px;
+                            Text { text: "Sinkronisasi Terakhir:"; font-size: 12px; color: Theme.text-muted; }
+                            Text { text: root.last-sync-time; font-size: 15px; font-weight: 700; color: Theme.primary; }
+                        }
+                    }
+                }
+
+                if root.sync-message != "": Rectangle {
+                    height: 40px;
+                    background: Theme.primary-light;
+                    border-radius: 6px;
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        Text {
+                            text: root.sync-message;
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: Theme.on-primary-light;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    width: 220px;
+                    height: 44px;
+                    background: root.is-syncing ? #a0a0a0 : Theme.emerald;
+                    border-radius: 8px;
+                    TouchArea {
+                        enabled: !root.is-syncing;
+                        clicked => { root.trigger-sync-clicked(); }
+                        mouse-cursor: pointer;
+                    }
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 8px;
+                        Text {
+                            text: root.is-syncing ? "Sedang Sinkronisasi..." : "🔄 Sinkronkan Sekarang";
+                            color: white;
+                            font-size: 13px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    vertical-stretch: 1;
+                }
+            }
+        }
+    }
+}

@@ -1,7 +1,7 @@
 [package]
 name = "partisipasi-sekolah"
-version = "0.1.2"
-description = "A Tauri App"
+version = "0.2.0"
+description = "Partisipasi Sekolah Desktop Client (100% Native Rust & Slint UI)"
 authors = ["you"]
 edition = "2021"
 
@@ -15,6 +15,7 @@ name = "partisipasi_sekolah_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
+slint-build = "1.9"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
@@ -34,6 +35,8 @@ sha2 = "0.10"
 tauri-plugin-autostart = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+dirs = "6.0"
+slint = "1.9"
 
 
 

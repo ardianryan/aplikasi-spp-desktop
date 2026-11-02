@@ -1,0 +1,226 @@
+import { Theme } from "../theme.slint";
+
+export struct CashierSummaryRecord {
+    cashier_name: string,
+    cash_amount: string,
+    transfer_amount: string,
+    savings_amount: string,
+    total_amount: string,
+}
+
+export component ReportsView inherits Rectangle {
+    background: Theme.bg-primary;
+
+    in property <string> filter-date: "Hari Ini";
+    in property <string> grand-total: "Rp 0";
+    in property <string> cash-total: "Rp 0";
+    in property <string> transfer-total: "Rp 0";
+    in property <string> savings-total: "Rp 0";
+    in property <[CashierSummaryRecord]> cashier-summaries: [];
+
+    callback refresh-reports();
+
+    VerticalLayout {
+        padding: 20px;
+        spacing: 16px;
+
+        HorizontalLayout {
+            alignment: space-between;
+            Text {
+                text: "Laporan Penerimaan Kas SPP";
+                font-size: 20px;
+                font-weight: 700;
+                color: Theme.text-main;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                width: 120px;
+                height: 36px;
+                background: Theme.primary;
+                border-radius: 6px;
+                TouchArea {
+                    clicked => { root.refresh-reports(); }
+                    mouse-cursor: pointer;
+                }
+                Text {
+                    text: "🔄 Muat Ulang";
+                    color: white;
+                    font-size: 12px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // Summary 4 Metrics
+        HorizontalLayout {
+            spacing: 14px;
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 80px;
+                background: Theme.bg-card;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 8px;
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 4px;
+                    Text { text: "Total Semua Metode"; font-size: 12px; color: Theme.text-muted; }
+                    Text { text: root.grand-total; font-size: 18px; font-weight: 800; color: Theme.primary; }
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 80px;
+                background: Theme.bg-card;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 8px;
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 4px;
+                    Text { text: "Total Kas Tunai"; font-size: 12px; color: Theme.text-muted; }
+                    Text { text: root.cash-total; font-size: 18px; font-weight: 800; color: Theme.emerald; }
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 80px;
+                background: Theme.bg-card;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 8px;
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 4px;
+                    Text { text: "Total Transfer Bank"; font-size: 12px; color: Theme.text-muted; }
+                    Text { text: root.transfer-total; font-size: 18px; font-weight: 800; color: Theme.primary-hover; }
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                height: 80px;
+                background: Theme.bg-card;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 8px;
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 4px;
+                    Text { text: "Total Debet Tabungan"; font-size: 12px; color: Theme.text-muted; }
+                    Text { text: root.savings-total; font-size: 18px; font-weight: 800; color: Theme.amber; }
+                }
+            }
+        }
+
+        // Table Rekap Per Kasir
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.bg-card;
+            border-color: Theme.border;
+            border-width: 1px;
+            border-radius: 10px;
+
+            VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
+
+                Text {
+                    text: "Rekap Per Petugas Kasir";
+                    font-size: 14px;
+                    font-weight: 700;
+                    color: Theme.text-main;
+                }
+
+                // Table Header
+                Rectangle {
+                    height: 36px;
+                    background: Theme.bg-secondary;
+                    border-radius: 6px;
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        spacing: 8px;
+                        alignment: center;
+                        Text { horizontal-stretch: 1; text: "Nama Kasir / Loket"; font-size: 12px; font-weight: 600; color: Theme.text-muted; }
+                        Text { width: 120px; text: "Tunai"; font-size: 12px; font-weight: 600; color: Theme.text-muted; horizontal-alignment: right; }
+                        Text { width: 120px; text: "Transfer"; font-size: 12px; font-weight: 600; color: Theme.text-muted; horizontal-alignment: right; }
+                        Text { width: 120px; text: "Tabungan"; font-size: 12px; font-weight: 600; color: Theme.text-muted; horizontal-alignment: right; }
+                        Text { width: 130px; text: "Total"; font-size: 12px; font-weight: 600; color: Theme.text-muted; horizontal-alignment: right; }
+                    }
+                }
+
+                Flickable {
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        spacing: 6px;
+                        for item in root.cashier-summaries: Rectangle {
+                            height: 40px;
+                            background: Theme.bg-secondary;
+                            border-radius: 6px;
+
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                spacing: 8px;
+                                alignment: center;
+
+                                Text {
+                                    horizontal-stretch: 1;
+                                    text: item.cashier_name;
+                                    font-size: 13px;
+                                    font-weight: 600;
+                                    color: Theme.text-main;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    width: 120px;
+                                    text: item.cash_amount;
+                                    font-size: 12px;
+                                    color: Theme.emerald;
+                                    font-weight: 600;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    width: 120px;
+                                    text: item.transfer_amount;
+                                    font-size: 12px;
+                                    color: Theme.text-main;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    width: 120px;
+                                    text: item.savings_amount;
+                                    font-size: 12px;
+                                    color: Theme.amber;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
+                                }
+
+                                Text {
+                                    width: 130px;
+                                    text: item.total_amount;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    color: Theme.primary;
+                                    horizontal-alignment: right;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
