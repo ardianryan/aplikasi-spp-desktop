@@ -176,18 +176,18 @@ export component ReportsView inherits Rectangle {
                         padding-left: 14px;
                         padding-right: 14px;
                         spacing: 8px;
-                        alignment: center;
-                        Text { horizontal-stretch: 1; text: "Nama Kasir / Loket"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
-                        Text { width: 120px; text: "Kas Tunai"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
-                        Text { width: 120px; text: "Transfer Bank"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
-                        Text { width: 120px; text: "Debet Tabungan"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
-                        Text { width: 130px; text: "Total Penerimaan"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
+                        Text { horizontal-stretch: 1; text: "Nama Kasir / Loket"; font-size: 11px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
+                        Text { width: 120px; text: "Kas Tunai"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
+                        Text { width: 120px; text: "Transfer Bank"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
+                        Text { width: 120px; text: "Debet Tabungan"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
+                        Text { width: 130px; text: "Total Penerimaan"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
                     }
                 }
 
                 Flickable {
                     vertical-stretch: 1;
                     VerticalLayout {
+                        alignment: start;
                         spacing: 4px;
                         for item in root.cashier-summaries: Rectangle {
                             height: 38px;
@@ -198,7 +198,6 @@ export component ReportsView inherits Rectangle {
                                 padding-left: 14px;
                                 padding-right: 14px;
                                 spacing: 8px;
-                                alignment: center;
 
                                 Text {
                                     horizontal-stretch: 1;

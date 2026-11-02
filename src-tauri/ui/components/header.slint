@@ -119,8 +119,9 @@ export component Header inherits Rectangle {
                 Rectangle {
                     width: 130px;
                     height: 34px;
-                    background: root.is-syncing ? #94a3b8 : Theme.primary;
+                    background: root.is-syncing ? #94a3b8 : touch-sync.has-hover ? Theme.primary-hover : Theme.primary;
                     border-radius: 17px;
+                    animate background { duration: 150ms; }
 
                     HorizontalLayout {
                         alignment: center;

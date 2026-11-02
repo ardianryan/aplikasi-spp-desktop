@@ -49,6 +49,24 @@ pub struct SlintAppState {
 pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
     println!("[INFO] Menjalankan Partisipasi Sekolah Desktop v0.2.0 (100% Native Rust & Slint UI)...");
 
+    // Deteksi argumen baris perintah untuk deep-linking (partisipasi-sekolah://)
+    let args: Vec<String> = std::env::args().collect();
+    let maybe_deep_link = args.iter().find(|a| a.starts_with("partisipasi-sekolah://") || a.starts_with("partisipasi://")).cloned();
+
+    #[cfg(unix)]
+    {
+        let socket_path = "/tmp/partisipasi_desktop_ipc.sock";
+        if let Some(ref url) = maybe_deep_link {
+            if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(socket_path) {
+                use std::io::Write;
+                let _ = writeln!(stream, "{}", url);
+                let _ = stream.flush();
+                println!("[INFO] Deep-link berhasil diteruskan ke instance aplikasi aktif: {}", url);
+                return Ok(());
+            }
+        }
+    }
+
     // 1. Inisialisasi Database SQLite lokal
     let conn = crate::db::init_db_standalone()
         .map_err(|e| format!("Gagal inisialisasi SQLite database: {}", e))?;
@@ -142,6 +160,46 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
     // Muat Riwayat Transaksi Hari Ini saat aplikasi dibuka
     refresh_today_payments_ui(&app, &conn_arc);
     refresh_sync_status_ui(&app, &conn_arc);
+
+    // Setup Local Socket IPC Server untuk menerima deep-link saat aplikasi berjalan
+    #[cfg(unix)]
+    {
+        let socket_path = "/tmp/partisipasi_desktop_ipc.sock";
+        let _ = std::fs::remove_file(socket_path);
+        if let Ok(listener) = std::os::unix::net::UnixListener::bind(socket_path) {
+            let app_weak_ipc = app.as_weak();
+            let conn_arc_ipc = Arc::clone(&conn_arc);
+            let state_ipc = Arc::clone(&state);
+
+            std::thread::spawn(move || {
+                for stream in listener.incoming() {
+                    if let Ok(mut s) = stream {
+                        use std::io::{BufRead, BufReader};
+                        let mut reader = BufReader::new(&mut s);
+                        let mut line = String::new();
+                        if reader.read_line(&mut line).is_ok() {
+                            let trimmed = line.trim().to_string();
+                            if !trimmed.is_empty() {
+                                let app_weak = app_weak_ipc.clone();
+                                let conn_arc = Arc::clone(&conn_arc_ipc);
+                                let state = Arc::clone(&state_ipc);
+                                let _ = slint::invoke_from_event_loop(move || {
+                                    if let Some(app) = app_weak.upgrade() {
+                                        process_deep_link_url(&trimmed, &app, &conn_arc, &state);
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    // Jika biner diluncurkan langsung membawa URL deep-link
+    if let Some(ref url) = maybe_deep_link {
+        process_deep_link_url(url, &app, &conn_arc, &state);
+    }
 
     // ==========================================
     // EVENT LISTENERS & CALLBACKS
@@ -275,7 +333,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     let assignments_model = app.get_assignments();
                     for i in 0..assignments_model.row_count() {
                         if let Some(item) = assignments_model.row_data(i) {
-                            if item.id == aid_str && item.remaining_raw > 0 {
+                            if item.id == aid_str && !item.is_group_header && item.remaining_raw > 0 {
                                 state_lock.cart.push(ActiveCartItem {
                                     assignment_id: aid_str.clone(),
                                     name: format!("{} {}", item.payment_type_name, item.month_name).trim().to_string(),
@@ -452,11 +510,11 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     refresh_today_payments_ui(&app, &conn_arc);
                     refresh_sync_status_ui(&app, &conn_arc);
 
-                    // Cetak otomatis kwitansi pembayaran
+                    // Buka modal kwitansi otomatis di dalam aplikasi (Tanpa keluar ke peramban)
                     if let Ok(conn) = conn_arc.lock() {
-                        let _ = print_receipt_document(&conn, &tx_code, &cashier_nama);
+                        let _ = populate_receipt_modal(&app, &conn, &tx_code, &cashier_nama);
                     }
-                    app.set_sync_toast_message(format!("Pembayaran {} berhasil! Kwitansi dibuka.", tx_code).into());
+                    app.set_sync_toast_message(format!("Pembayaran {} berhasil!", tx_code).into());
                     app.set_sync_toast_is_error(false);
                 }
             }
@@ -608,18 +666,52 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
             if trx_code.is_empty() {
                 return;
             }
-            if let Ok(conn) = conn_arc.lock() {
-                let cashier_name = state.lock().unwrap().user_nama.clone();
-                match print_receipt_document(&conn, &trx_code, &cashier_name) {
-                    Ok(_) => {
-                        if let Some(app) = app_weak.upgrade() {
-                            app.set_sync_toast_message("Membuka kwitansi pembayaran untuk dicetak...".into());
+            if let Some(app) = app_weak.upgrade() {
+                if let Ok(conn) = conn_arc.lock() {
+                    let cashier_name = state.lock().unwrap().user_nama.clone();
+                    match populate_receipt_modal(&app, &conn, &trx_code, &cashier_name) {
+                        Ok(_) => {
+                            app.set_sync_toast_message("Kwitansi siap ditampilkan.".into());
                             app.set_sync_toast_is_error(false);
                         }
+                        Err(e) => {
+                            app.set_sync_toast_message(format!("Gagal memuat kwitansi: {}", e).into());
+                            app.set_sync_toast_is_error(true);
+                        }
                     }
-                    Err(e) => {
-                        if let Some(app) = app_weak.upgrade() {
-                            app.set_sync_toast_message(format!("Gagal cetak kwitansi: {}", e).into());
+                }
+            }
+        });
+    }
+
+    {
+        let app_weak = app_weak.clone();
+        app.on_close_receipt_modal(move || {
+            if let Some(app) = app_weak.upgrade() {
+                app.set_show_receipt_modal(false);
+            }
+        });
+    }
+
+    {
+        let conn_arc = Arc::clone(&conn_arc);
+        let state = Arc::clone(&state);
+        let app_weak = app_weak.clone();
+        app.on_execute_direct_print(move |trx_code_slint| {
+            let trx_code = trx_code_slint.to_string();
+            if trx_code.is_empty() {
+                return;
+            }
+            if let Some(app) = app_weak.upgrade() {
+                if let Ok(conn) = conn_arc.lock() {
+                    let cashier_name = state.lock().unwrap().user_nama.clone();
+                    match send_receipt_to_printer(&conn, &trx_code, &cashier_name) {
+                        Ok(_) => {
+                            app.set_sync_toast_message("Kwitansi berhasil dikirim ke printer kasir.".into());
+                            app.set_sync_toast_is_error(false);
+                        }
+                        Err(e) => {
+                            app.set_sync_toast_message(format!("Info Cetak: {}", e).into());
                             app.set_sync_toast_is_error(true);
                         }
                     }
@@ -865,6 +957,320 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
+    // Save Sync Settings from Sync Tab
+    {
+        let conn_arc = Arc::clone(&conn_arc);
+        let app_weak = app_weak.clone();
+        let state = Arc::clone(&state);
+        app.on_save_sync_settings(move |url_slint, token_slint| {
+            let mut raw_url = url_slint.to_string().trim().to_string();
+            let raw_token = token_slint.to_string().trim().to_string();
+
+            if raw_url.is_empty() {
+                if let Some(app) = app_weak.upgrade() {
+                    app.set_sync_toast_message("Alamat URL server tidak boleh kosong.".into());
+                    app.set_sync_toast_is_error(true);
+                }
+                return;
+            }
+            if !raw_url.starts_with("http://") && !raw_url.starts_with("https://") {
+                raw_url = format!("http://{}", raw_url);
+            }
+            let clean_url = raw_url.trim_end_matches('/').to_string();
+
+            // Cek apakah input berupa 6-digit angka (pairing code / kode otorisasi dari peramban)
+            let is_six_digits = raw_token.len() == 6 && raw_token.chars().all(|c| c.is_ascii_digit());
+            if is_six_digits {
+                let app_weak2 = app_weak.clone();
+                let conn_arc2 = Arc::clone(&conn_arc);
+                let state2 = Arc::clone(&state);
+                let clean_url_clone = clean_url.clone();
+                let code_clone = raw_token.clone();
+
+                if let Some(app) = app_weak.upgrade() {
+                    app.set_sync_toast_message("Sedang menukar kode otorisasi 6-digit...".into());
+                    app.set_sync_toast_is_error(false);
+                }
+
+                std::thread::spawn(move || {
+                    let rt = tokio::runtime::Runtime::new();
+                    let res = if let Ok(rt) = rt {
+                        rt.block_on(async {
+                            crate::sync::exchange_code_with_server(&clean_url_clone, "", &code_clone).await
+                        })
+                    } else {
+                        Err("Gagal membuat runtime async".into())
+                    };
+
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(app) = app_weak2.upgrade() {
+                            match res {
+                                Ok(exchange) => {
+                                    if let Ok(conn) = conn_arc2.lock() {
+                                        let _ = conn.execute(
+                                            "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_url', ?1)
+                                             ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                                            [&clean_url_clone],
+                                        );
+                                        let _ = conn.execute(
+                                            "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_key', ?1)
+                                             ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                                            [&exchange.api_key],
+                                        );
+                                        let _ = conn.execute(
+                                            "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_token', ?1)
+                                             ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                                            [&exchange.token],
+                                        );
+                                        let _ = crate::commands::save_exchanged_session(&conn, exchange.clone());
+                                    }
+                                    {
+                                        let mut st = state2.lock().unwrap();
+                                        st.user_token = Some(exchange.token.clone());
+                                        st.user_nama = exchange.user.nama.clone();
+                                        st.user_role = exchange.user.role.clone();
+                                        st.is_logged_in = true;
+                                    }
+                                    app.set_sync_base_url(clean_url_clone.into());
+                                    app.set_sync_api_token(exchange.token.into());
+                                    app.set_user_name(exchange.user.nama.into());
+                                    app.set_user_role(exchange.user.role.into());
+                                    app.set_sync_toast_message("Kode otorisasi berhasil ditukar & disimpan!".into());
+                                    app.set_sync_toast_is_error(false);
+                                    app.set_is_online(true);
+                                    refresh_sync_status_ui(&app, &conn_arc2);
+                                }
+                                Err(e) => {
+                                    app.set_sync_toast_message(format!("Gagal menukar kode: {}", e).into());
+                                    app.set_sync_toast_is_error(true);
+                                }
+                            }
+                        }
+                    });
+                });
+                return;
+            }
+
+            // Bukan 6 digit -> Simpan token / API key biasa
+            if let Ok(conn) = conn_arc.lock() {
+                let _ = conn.execute(
+                    "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_url', ?1)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                    [&clean_url],
+                );
+                if !raw_token.is_empty() {
+                    let _ = conn.execute(
+                        "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_key', ?1)
+                         ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                        [&raw_token],
+                    );
+                    let _ = conn.execute(
+                        "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_token', ?1)
+                         ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                        [&raw_token],
+                    );
+                }
+            }
+
+            if let Some(app) = app_weak.upgrade() {
+                app.set_sync_base_url(clean_url.into());
+                app.set_sync_api_token(raw_token.into());
+                app.set_sync_toast_message("Pengaturan server & token berhasil disimpan.".into());
+                app.set_sync_toast_is_error(false);
+                refresh_sync_status_ui(&app, &conn_arc);
+            }
+        });
+    }
+
+    // Test Sync Connection from Sync Tab
+    {
+        let app_weak = app_weak.clone();
+        app.on_test_sync_connection(move |url_slint, token_slint| {
+            let mut raw_url = url_slint.to_string().trim().to_string();
+            let raw_token = token_slint.to_string().trim().to_string();
+
+            if raw_url.is_empty() {
+                if let Some(app) = app_weak.upgrade() {
+                    app.set_test_connection_result("URL server tidak boleh kosong.".into());
+                    app.set_sync_toast_message("URL server tidak boleh kosong.".into());
+                    app.set_sync_toast_is_error(true);
+                }
+                return;
+            }
+            if !raw_url.starts_with("http://") && !raw_url.starts_with("https://") {
+                raw_url = format!("http://{}", raw_url);
+            }
+            let clean_url = raw_url.trim_end_matches('/').to_string();
+
+            if let Some(app) = app_weak.upgrade() {
+                app.set_is_testing_connection(true);
+                app.set_test_connection_result("Menguji koneksi ke server...".into());
+            }
+
+            let app_weak2 = app_weak.clone();
+            std::thread::spawn(move || {
+                let ping_url = format!("{}/api/v1/sync/status", clean_url);
+                let rt = tokio::runtime::Runtime::new();
+                let res = if let Ok(rt) = rt {
+                    rt.block_on(async {
+                        let client = reqwest::Client::builder()
+                            .timeout(std::time::Duration::from_secs(6))
+                            .build()
+                            .map_err(|e| e.to_string())?;
+
+                        let mut req = client.get(&ping_url);
+                        if !raw_token.is_empty() {
+                            req = req.header("X-API-Key", &raw_token)
+                                     .header("Authorization", format!("Bearer {}", raw_token));
+                        }
+                        let resp = req.send().await.map_err(|e| format!("Tidak dapat menghubungi server: {}", e))?;
+                        let status = resp.status();
+                        if status.is_success() || status.as_u16() == 401 {
+                            Ok(format!("Terhubung (HTTP {})", status.as_u16()))
+                        } else {
+                            Err(format!("Server merespons kode {}", status.as_u16()))
+                        }
+                    })
+                } else {
+                    Err("Gagal membuat runtime async".into())
+                };
+
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(app) = app_weak2.upgrade() {
+                        app.set_is_testing_connection(false);
+                        match res {
+                            Ok(msg) => {
+                                app.set_test_connection_result(format!("Koneksi berhasil! {}", msg).into());
+                                app.set_sync_toast_message("Server terhubung dengan baik.".into());
+                                app.set_sync_toast_is_error(false);
+                                app.set_is_online(true);
+                            }
+                            Err(e) => {
+                                app.set_test_connection_result(format!("Koneksi gagal: {}", e).into());
+                                app.set_sync_toast_message(format!("Koneksi gagal: {}", e).into());
+                                app.set_sync_toast_is_error(true);
+                                app.set_is_online(false);
+                            }
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    // Setup Background Autosync & Heartbeat Connection Checker
+    {
+        let app_weak_sync = app_weak.clone();
+        let conn_arc_sync = Arc::clone(&conn_arc);
+        std::thread::spawn(move || {
+            // Jeda 2 detik saat startup agar jendela UI telah ter-render penuh
+            std::thread::sleep(std::time::Duration::from_secs(2));
+
+            let mut last_pull_instant = std::time::Instant::now();
+            let mut is_first_run = true;
+
+            loop {
+                let (api_url, api_token) = {
+                    if let Ok(conn) = conn_arc_sync.lock() {
+                        let u: String = conn.query_row("SELECT value FROM settings WHERE key = 'api_url';", [], |r| r.get(0)).unwrap_or_default();
+                        let t: String = conn.query_row(
+                            "SELECT value FROM settings WHERE key = 'api_key' UNION SELECT value FROM settings WHERE key = 'api_token' LIMIT 1;",
+                            [],
+                            |r| r.get(0)
+                        ).unwrap_or_default();
+                        (u, t)
+                    } else {
+                        ("".into(), "".into())
+                    }
+                };
+
+                if !api_url.is_empty() && !api_token.is_empty() {
+                    let ping_url = format!("{}/api/v1/sync/status", api_url.trim_end_matches('/'));
+                    let rt = tokio::runtime::Runtime::new();
+                    let server_online = if let Ok(ref rt) = rt {
+                        rt.block_on(async {
+                            let client = reqwest::Client::builder()
+                                .timeout(std::time::Duration::from_secs(5))
+                                .build();
+                            if let Ok(c) = client {
+                                c.get(&ping_url)
+                                    .header("X-API-Key", &api_token)
+                                    .send()
+                                    .await
+                                    .map(|resp| resp.status().is_success() || resp.status().as_u16() == 401)
+                                    .unwrap_or(false)
+                            } else {
+                                false
+                            }
+                        })
+                    } else {
+                        false
+                    };
+
+                    let app_weak_cb = app_weak_sync.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(app) = app_weak_cb.upgrade() {
+                            app.set_is_online(server_online);
+                        }
+                    });
+
+                    if server_online {
+                        let pending_count: i64 = {
+                            if let Ok(conn) = conn_arc_sync.lock() {
+                                let p1: i64 = conn.query_row("SELECT count(*) FROM payments WHERE sync_status = 'pending_push';", [], |r| r.get(0)).unwrap_or(0);
+                                let p2: i64 = conn.query_row("SELECT count(*) FROM savings_transactions WHERE sync_status = 'pending_push';", [], |r| r.get(0)).unwrap_or(0);
+                                p1 + p2
+                            } else { 0 }
+                        };
+
+                        let should_sync = is_first_run || pending_count > 0 || last_pull_instant.elapsed().as_secs() >= 300;
+
+                        if should_sync {
+                            is_first_run = false;
+                            last_pull_instant = std::time::Instant::now();
+
+                            let db_state = crate::db::DbState {
+                                conn: Mutex::new(crate::db::init_db_standalone().unwrap()),
+                            };
+                            let sync_res = if let Ok(ref rt) = rt {
+                                rt.block_on(async {
+                                    crate::commands::perform_sync(&db_state).await
+                                })
+                            } else {
+                                Err("Runtime error".into())
+                            };
+
+                            let app_weak_res = app_weak_sync.clone();
+                            let conn_arc_res = Arc::clone(&conn_arc_sync);
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(app) = app_weak_res.upgrade() {
+                                    match sync_res {
+                                        Ok(msg) => {
+                                            app.set_sync_message(msg.into());
+                                            app.set_sync_toast_message("Autosync Berhasil: Data cloud & lokal selaras.".into());
+                                            app.set_sync_toast_is_error(false);
+                                            app.set_is_online(true);
+                                            if let Ok(conn) = conn_arc_res.lock() {
+                                                update_branding_and_settings(&app, &conn);
+                                            }
+                                            refresh_sync_status_ui(&app, &conn_arc_res);
+                                            refresh_today_payments_ui(&app, &conn_arc_res);
+                                        }
+                                        Err(e) => {
+                                            println!("[WARN] Autosync background: {}", e);
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+
+                std::thread::sleep(std::time::Duration::from_secs(30));
+            }
+        });
+    }
+
     // Jalankan Event Loop GUI Slint Native
     app.run()?;
     Ok(())
@@ -966,15 +1372,13 @@ fn update_branding_and_settings(app: &AppWindow, conn: &Connection) {
     }
 }
 
-fn html_escape(input: &str) -> String {
-    input.replace('&', "&amp;")
-         .replace('<', "&lt;")
-         .replace('>', "&gt;")
-         .replace('"', "&quot;")
-         .replace('\'', "&#39;")
-}
 
-fn print_receipt_document(conn: &Connection, trx_code: &str, cashier_name: &str) -> Result<(), String> {
+fn populate_receipt_modal(
+    app: &AppWindow,
+    conn: &Connection,
+    trx_code: &str,
+    cashier_name: &str,
+) -> Result<(), String> {
     // 1. Query data transaksi & siswa
     let (payment_id, created_at, payment_method_name, total_amount, notes, student_nama, student_nis, student_kelas) = conn.query_row(
         "SELECT p.id, p.created_at, COALESCE(p.payment_method_name, 'Tunai'), p.total_amount, p.notes, s.nama, s.nis, COALESCE(s.kelas, c.name, '-')
@@ -1007,7 +1411,7 @@ fn print_receipt_document(conn: &Connection, trx_code: &str, cashier_name: &str)
          WHERE d.payment_id = ?1;"
     ).map_err(|e| e.to_string())?;
 
-    let items: Vec<(String, Option<i32>, f64, Option<String>)> = stmt.query_map([&payment_id], |row| {
+    let items_raw: Vec<(String, Option<i32>, f64, Option<String>)> = stmt.query_map([&payment_id], |row| {
         Ok((
             row.get::<_, String>(0)?,
             row.get::<_, Option<i32>>(2)?,
@@ -1015,13 +1419,6 @@ fn print_receipt_document(conn: &Connection, trx_code: &str, cashier_name: &str)
             row.get::<_, Option<String>>(4)?,
         ))
     }).map_err(|e| e.to_string())?.flatten().collect();
-
-    // 3. Query pengaturan sekolah & kop
-    let school_name: String = conn.query_row("SELECT value FROM settings WHERE key = 'school_name';", [], |r| r.get(0)).unwrap_or_else(|_| "Nama Sekolah".into());
-    let school_address: String = conn.query_row("SELECT value FROM settings WHERE key = 'school_address';", [], |r| r.get(0)).unwrap_or_else(|_| "Alamat Sekolah".into());
-    let committee_name: String = conn.query_row("SELECT value FROM settings WHERE key = 'committee_name';", [], |r| r.get(0)).unwrap_or_default();
-    let logo_left: String = conn.query_row("SELECT value FROM settings WHERE key = 'logo_left';", [], |r| r.get(0)).unwrap_or_default();
-    let stamp_image: String = conn.query_row("SELECT value FROM settings WHERE key = 'stamp_image';", [], |r| r.get(0)).unwrap_or_default();
 
     let month_name = |m: i32| -> &'static str {
         match m {
@@ -1031,8 +1428,8 @@ fn print_receipt_document(conn: &Connection, trx_code: &str, cashier_name: &str)
         }
     };
 
-    let mut rows_html = String::new();
-    for (i, item) in items.iter().enumerate() {
+    let mut modal_items = Vec::new();
+    for (i, item) in items_raw.iter().enumerate() {
         let mut desc = item.0.clone();
         if let Some(m) = item.1 {
             let m_name = month_name(m);
@@ -1043,273 +1440,149 @@ fn print_receipt_document(conn: &Connection, trx_code: &str, cashier_name: &str)
         if let Some(ref y) = item.3 {
             desc.push_str(&format!(" [T.A {}]", y));
         }
-        rows_html.push_str(&format!(
-            "<tr><td style=\"text-align:center;\">{}</td><td>{}</td><td style=\"text-align:right;\">{}</td></tr>",
-            i + 1,
-            html_escape(&desc),
-            format_idr(item.2)
-        ));
+        modal_items.push(ReceiptModalItem {
+            index: (i + 1) as i32,
+            description: desc.into(),
+            amount: format_idr(item.2).into(),
+        });
     }
 
-    let logo_tag = if !logo_left.is_empty() {
-        format!("<img src=\"{}\" alt=\"Logo\" style=\"height:64px; max-width:120px; object-fit:contain;\" />", logo_left)
-    } else {
-        "".to_string()
+    let school_name: String = conn.query_row("SELECT value FROM settings WHERE key = 'school_name';", [], |r| r.get(0)).unwrap_or_else(|_| "Nama Sekolah".into());
+    let school_address: String = conn.query_row("SELECT value FROM settings WHERE key = 'school_address';", [], |r| r.get(0)).unwrap_or_else(|_| "Alamat Sekolah".into());
+
+    app.set_receipt_modal_data(ReceiptModalData {
+        transaction_code: trx_code.into(),
+        created_at: created_at.into(),
+        student_name: student_nama.into(),
+        student_nis: student_nis.unwrap_or_else(|| "-".into()).into(),
+        student_class: student_kelas.into(),
+        payment_method: payment_method_name.into(),
+        total_amount: format_idr(total_amount).into(),
+        cashier_name: if cashier_name.is_empty() { "Petugas Kasir".into() } else { cashier_name.into() },
+        notes: notes.unwrap_or_default().into(),
+        school_name: school_name.into(),
+        school_address: school_address.into(),
+    });
+    app.set_receipt_modal_items(Rc::new(VecModel::from(modal_items)).into());
+    app.set_show_receipt_modal(true);
+
+    Ok(())
+}
+
+fn send_receipt_to_printer(conn: &Connection, trx_code: &str, cashier_name: &str) -> Result<(), String> {
+    // 1. Query data transaksi
+    let (payment_id, created_at, payment_method_name, total_amount, notes, student_nama, student_nis, student_kelas) = conn.query_row(
+        "SELECT p.id, p.created_at, COALESCE(p.payment_method_name, 'Tunai'), p.total_amount, p.notes, s.nama, s.nis, COALESCE(s.kelas, c.name, '-')
+         FROM payments p
+         JOIN students s ON p.student_id = s.id
+         LEFT JOIN classrooms c ON s.classroom_id = c.id
+         WHERE p.transaction_code = ?1;",
+        [trx_code],
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, f64>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, Option<String>>(6)?,
+                row.get::<_, String>(7)?,
+            ))
+        }
+    ).map_err(|e| format!("Transaksi tidak ditemukan: {}", e))?;
+
+    let school_name: String = conn.query_row("SELECT value FROM settings WHERE key = 'school_name';", [], |r| r.get(0)).unwrap_or_else(|_| "Nama Sekolah".into());
+    let school_address: String = conn.query_row("SELECT value FROM settings WHERE key = 'school_address';", [], |r| r.get(0)).unwrap_or_else(|_| "".into());
+
+    let mut stmt = conn.prepare(
+        "SELECT t.name, a.month, d.amount, y.name
+         FROM payment_details d
+         JOIN payment_assignments a ON d.payment_assignment_id = a.id
+         JOIN payment_types t ON a.payment_type_id = t.id
+         LEFT JOIN academic_years y ON a.academic_year_id = y.id
+         WHERE d.payment_id = ?1;"
+    ).map_err(|e| e.to_string())?;
+
+    let month_name = |m: i32| -> &'static str {
+        match m {
+            7 => "Juli", 8 => "Agustus", 9 => "September", 10 => "Oktober",
+            11 => "November", 12 => "Desember", 1 => "Januari", 2 => "Februari",
+            3 => "Maret", 4 => "April", 5 => "Mei", 6 => "Juni", _ => "",
+        }
     };
 
-    let stamp_tag = if !stamp_image.is_empty() {
-        format!("<img src=\"{}\" alt=\"Stempel\" style=\"position:absolute; left:10px; top:-20px; height:80px; opacity:0.8; transform:rotate(-8deg); z-index:1; pointer-events:none;\" />", stamp_image)
-    } else {
-        "".to_string()
-    };
+    let items: Vec<(String, Option<i32>, f64, Option<String>)> = stmt.query_map([&payment_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, Option<i32>>(1)?,
+            row.get::<_, f64>(2)?,
+            row.get::<_, Option<String>>(3)?,
+        ))
+    }).map_err(|e| e.to_string())?.flatten().collect();
 
-    let committee_tag = if !committee_name.is_empty() {
-        format!("<h3 style=\"margin:0; font-size:14px; font-weight:700;\">{}</h3>", html_escape(&committee_name))
-    } else {
-        "".to_string()
-    };
+    // Dokumen Struk Monospace Standar Printer Kasir (Thermal POS / Dot Matrix)
+    let mut txt = String::new();
+    txt.push_str("========================================\n");
+    txt.push_str(&format!("{:^40}\n", school_name));
+    if !school_address.is_empty() {
+        txt.push_str(&format!("{:^40}\n", school_address));
+    }
+    txt.push_str("========================================\n");
+    txt.push_str(&format!("{:^40}\n", "KWITANSI PEMBAYARAN"));
+    txt.push_str("----------------------------------------\n");
+    txt.push_str(&format!("No. Transaksi : {}\n", trx_code));
+    txt.push_str(&format!("Tanggal       : {}\n", created_at));
+    txt.push_str(&format!("Nama Siswa    : {}\n", student_nama));
+    txt.push_str(&format!("NIS / Kelas   : {} / {}\n", student_nis.unwrap_or_else(|| "-".into()), student_kelas));
+    txt.push_str(&format!("Metode Bayar  : {}\n", payment_method_name));
+    txt.push_str("----------------------------------------\n");
+    txt.push_str(&format!("{:<3}{:<25}{:>12}\n", "No", "Keterangan", "Jumlah"));
+    txt.push_str("----------------------------------------\n");
+    for (i, itm) in items.iter().enumerate() {
+        let mut desc = itm.0.clone();
+        if let Some(m) = itm.1 {
+            let mn = month_name(m);
+            if !mn.is_empty() { desc.push_str(&format!(" ({})", mn)); }
+        }
+        if desc.len() > 24 { desc.truncate(24); }
+        txt.push_str(&format!("{:<3}{:<25}{:>12}\n", i + 1, desc, format_idr(itm.2)));
+    }
+    txt.push_str("----------------------------------------\n");
+    txt.push_str(&format!("{:<28}{:>12}\n", "TOTAL PEMBAYARAN:", format_idr(total_amount)));
+    txt.push_str("----------------------------------------\n");
+    if let Some(ref n) = notes {
+        if !n.is_empty() {
+            txt.push_str(&format!("Catatan: {}\n", n));
+        }
+    }
+    txt.push_str(&format!("Kasir: {}\n", if cashier_name.is_empty() { "Petugas Kasir" } else { cashier_name }));
+    txt.push_str("========================================\n");
+    txt.push_str(&format!("{:^40}\n", "Bukti Pembayaran yang Sah"));
+    txt.push_str("\n\n\n\n\x1b\x69"); // Feed and Paper cut command
 
-    let notes_tag = if let Some(n) = notes {
-        if !n.trim().is_empty() {
-            format!("<div style=\"margin-top:12px; font-size:11px; color:#555;\"><strong>Catatan:</strong> {}</div>", html_escape(&n))
-        } else { "".to_string() }
-    } else { "".to_string() };
+    let tmp_path = std::env::temp_dir().join(format!("kwitansi_{}.txt", trx_code));
+    std::fs::write(&tmp_path, txt).map_err(|e| format!("Gagal buat spooler kwitansi: {}", e))?;
 
-    let today_date_str = Local::now().format("%d %B %Y").to_string();
+    // Jalankan adapter pencetakan native CUPS (lpr) langsung tanpa membuka web browser
+    #[cfg(unix)]
+    {
+        let output = std::process::Command::new("lpr")
+            .arg(&tmp_path)
+            .output()
+            .map_err(|e| format!("Perintah lpr gagal: {}", e))?;
 
-    let full_html = format!(r#"<!DOCTYPE html>
-<html lang="id">
-<head>
-    <meta charset="utf-8">
-    <title>Kwitansi Pembayaran - {trx_code}</title>
-    <style>
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            color: #111;
-            margin: 0;
-            padding: 24px;
-            background: #f8fafc;
-        }}
-        .receipt-card {{
-            max-width: 680px;
-            margin: 0 auto;
-            background: #ffffff;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 28px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
-        }}
-        .header {{
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            border-bottom: 2px solid #002b59;
-            padding-bottom: 12px;
-            margin-bottom: 16px;
-        }}
-        .school-info {{
-            flex: 1;
-            text-align: center;
-        }}
-        .school-name {{
-            font-size: 18px;
-            font-weight: 800;
-            color: #002b59;
-            margin: 0;
-            letter-spacing: 0.5px;
-        }}
-        .school-addr {{
-            font-size: 11px;
-            color: #475569;
-            margin: 4px 0 0 0;
-        }}
-        .title {{
-            text-align: center;
-            font-size: 15px;
-            font-weight: 800;
-            letter-spacing: 1.5px;
-            color: #1e293b;
-            margin: 12px 0 16px 0;
-            text-transform: uppercase;
-        }}
-        .meta-table {{
-            width: 100%;
-            font-size: 12px;
-            margin-bottom: 16px;
-            border-collapse: collapse;
-        }}
-        .meta-table td {{
-            padding: 4px 6px;
-        }}
-        .meta-label {{
-            width: 110px;
-            color: #64748b;
-            font-weight: 600;
-        }}
-        .items-table {{
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-            margin-bottom: 16px;
-        }}
-        .items-table th {{
-            background: #f1f5f9;
-            padding: 8px;
-            border: 1px solid #cbd5e1;
-            font-weight: 700;
-            color: #334155;
-        }}
-        .items-table td {{
-            padding: 8px;
-            border: 1px solid #cbd5e1;
-        }}
-        .total-row td {{
-            font-weight: 800;
-            font-size: 13px;
-            background: #f8fafc;
-        }}
-        .footer {{
-            display: flex;
-            justify-content: flex-end;
-            margin-top: 24px;
-        }}
-        .sign-box {{
-            width: 220px;
-            text-align: center;
-            font-size: 12px;
-            position: relative;
-        }}
-        .sign-space {{
-            height: 60px;
-            position: relative;
-        }}
-        .cashier-name {{
-            font-weight: 700;
-            text-decoration: underline;
-        }}
-        .footer-note {{
-            margin-top: 24px;
-            text-align: center;
-            font-size: 10px;
-            color: #94a3b8;
-            border-top: 1px dashed #e2e8f0;
-            padding-top: 8px;
-        }}
-        @media print {{
-            body {{
-                background: #ffffff;
-                padding: 0;
-            }}
-            .receipt-card {{
-                box-shadow: none;
-                border: none;
-                padding: 0;
-                max-width: 100%;
-            }}
-            .no-print {{
-                display: none;
-            }}
-        }}
-    </style>
-</head>
-<body>
-    <div class="receipt-card">
-        <div class="header">
-            {logo_tag}
-            <div class="school-info">
-                {committee_tag}
-                <div class="school-name">{school_name_escaped}</div>
-                <div class="school-addr">{school_address_escaped}</div>
-            </div>
-        </div>
-        <div class="title">Kwitansi Pembayaran</div>
-        <table class="meta-table">
-            <tr>
-                <td class="meta-label">No. Transaksi</td>
-                <td>: <strong>{trx_code}</strong></td>
-                <td class="meta-label">Tanggal</td>
-                <td>: {created_at}</td>
-            </tr>
-            <tr>
-                <td class="meta-label">Nama Siswa</td>
-                <td>: <strong>{student_nama}</strong></td>
-                <td class="meta-label">NIS</td>
-                <td>: {student_nis}</td>
-            </tr>
-            <tr>
-                <td class="meta-label">Kelas</td>
-                <td>: {student_kelas}</td>
-                <td class="meta-label">Metode Bayar</td>
-                <td>: {payment_method_name}</td>
-            </tr>
-        </table>
-        <table class="items-table">
-            <thead>
-                <tr>
-                    <th style="width:36px;">No</th>
-                    <th>Keterangan Pembayaran</th>
-                    <th style="width:140px; text-align:right;">Jumlah</th>
-                </tr>
-            </thead>
-            <tbody>
-                {rows_html}
-            </tbody>
-            <tfoot>
-                <tr class="total-row">
-                    <td colspan="2" style="text-align:right;">Total Pembayaran</td>
-                    <td style="text-align:right; color:#002b59;">{total_amount_formatted}</td>
-                </tr>
-            </tfoot>
-        </table>
-        {notes_tag}
-        <div class="footer">
-            <div class="sign-box">
-                <div>Mojokerto, {today_date_str}</div>
-                <div style="font-weight:600; margin-top:2px;">Petugas Penerima,</div>
-                <div class="sign-space">
-                    {stamp_tag}
-                </div>
-                <div class="cashier-name">{cashier_name}</div>
-            </div>
-        </div>
-        <div class="footer-note">
-            Kwitansi ini merupakan bukti pembayaran yang sah &bull; Dicetak oleh Sistem Kasir Partisipasi Sekolah
-        </div>
-    </div>
-    <script>
-        window.onload = function() {{
-            window.print();
-        }};
-    </script>
-</body>
-</html>"#,
-        trx_code = trx_code,
-        logo_tag = logo_tag,
-        committee_tag = committee_tag,
-        school_name_escaped = html_escape(&school_name),
-        school_address_escaped = html_escape(&school_address),
-        created_at = created_at,
-        student_nama = html_escape(&student_nama),
-        student_nis = html_escape(&student_nis.unwrap_or_else(|| "-".into())),
-        student_kelas = html_escape(&student_kelas),
-        payment_method_name = html_escape(&payment_method_name),
-        rows_html = rows_html,
-        total_amount_formatted = format_idr(total_amount),
-        notes_tag = notes_tag,
-        today_date_str = today_date_str,
-        stamp_tag = stamp_tag,
-        cashier_name = html_escape(if cashier_name.is_empty() { "Petugas Kasir" } else { cashier_name }),
-    );
-
-    let tmp_path = std::env::temp_dir().join(format!("kwitansi_{}.html", trx_code));
-    std::fs::write(&tmp_path, full_html).map_err(|e| format!("Gagal menyimpan kwitansi sementara: {}", e))?;
-
-    #[cfg(target_os = "macos")]
-    let _ = std::process::Command::new("open").arg(&tmp_path).spawn();
-    #[cfg(target_os = "windows")]
-    let _ = std::process::Command::new("cmd").args(["/C", "start", "", tmp_path.to_str().unwrap_or("")]).spawn();
-    #[cfg(target_os = "linux")]
-    let _ = std::process::Command::new("xdg-open").arg(&tmp_path).spawn();
+        if !output.status.success() {
+            let err_msg = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Adapter printer CUPS: {}", err_msg.trim()));
+        }
+    }
+    #[cfg(windows)]
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "print", tmp_path.to_str().unwrap_or("")])
+            .spawn();
+    }
 
     Ok(())
 }
@@ -1422,7 +1695,7 @@ fn load_student_details_ui(
         s_data.savings_balance = format_idr(bal).into();
         app.set_current_student(s_data);
 
-        // 2. Data Assignments & Summary
+        // 2. Data Assignments & Summary (Dikelompokkan per Tahun Ajaran & Pos Bayar)
         let mut assignments_vec = Vec::new();
         let mut total_tagihan = 0.0;
         let mut total_dibayar = 0.0;
@@ -1430,11 +1703,12 @@ fn load_student_details_ui(
         let mut total_tunggakan = 0.0;
 
         if let Ok(mut stmt) = conn.prepare(
-            "SELECT a.id, t.name, t.type, a.month, a.amount, a.paid_amount, a.relief_amount, a.status 
+            "SELECT a.id, t.name, t.type, a.month, a.amount, a.paid_amount, a.relief_amount, a.status, COALESCE(y.name, 'Lainnya') as academic_year_name, COALESCE(y.is_active, 0) as is_active
              FROM payment_assignments a
              JOIN payment_types t ON a.payment_type_id = t.id
+             LEFT JOIN academic_years y ON a.academic_year_id = y.id
              WHERE a.student_id = ?1
-             ORDER BY a.month ASC, t.name ASC;"
+             ORDER BY COALESCE(y.name, '0000') DESC, t.name ASC, a.month ASC;"
         ) {
             if let Ok(rows) = stmt.query_map([student_id], |row| {
                 let id: String = row.get(0)?;
@@ -1445,6 +1719,8 @@ fn load_student_details_ui(
                 let paid: f64 = row.get(5)?;
                 let relief: f64 = row.get(6)?;
                 let status: String = row.get(7)?;
+                let year_name: String = row.get(8)?;
+                let is_active: i32 = row.get(9)?;
 
                 let month_name = match month {
                     Some(7) => "Juli", Some(8) => "Agustus", Some(9) => "September",
@@ -1456,18 +1732,49 @@ fn load_student_details_ui(
 
                 let remaining = (amount - paid - relief).max(0.0);
 
-                Ok((id, name, t_type, month_name.to_string(), amount, paid, relief, remaining, status))
+                Ok((id, name, t_type, month_name.to_string(), amount, paid, relief, remaining, status, year_name, is_active))
             }) {
+                let mut current_year: Option<String> = None;
                 for r in rows.flatten() {
                     total_tagihan += r.4;
                     total_dibayar += r.5;
                     total_keringanan += r.6;
                     total_tunggakan += r.7;
 
+                    let year_name = r.9.clone();
+                    let is_active = r.10;
+
+                    // Sisipkan Header Grup Tahun Pelajaran jika berganti
+                    if current_year.as_ref() != Some(&year_name) {
+                        current_year = Some(year_name.clone());
+                        let header_title = if is_active == 1 {
+                            format!("Tahun Pelajaran {} (Aktif)", year_name)
+                        } else {
+                            format!("Tahun Pelajaran {}", year_name)
+                        };
+
+                        assignments_vec.push(AssignmentData {
+                            id: format!("hdr-{}", year_name).into(),
+                            academic_year_name: year_name.clone().into(),
+                            payment_type_name: "".into(),
+                            payment_type_type: "".into(),
+                            month_name: "".into(),
+                            amount: "".into(),
+                            paid_amount: "".into(),
+                            remaining_amount: "".into(),
+                            remaining_raw: 0,
+                            status: "".into(),
+                            is_selected: false,
+                            is_group_header: true,
+                            group_header_title: header_title.into(),
+                        });
+                    }
+
                     let is_sel = state.lock().unwrap().cart.iter().any(|c| c.assignment_id == r.0);
 
                     assignments_vec.push(AssignmentData {
                         id: r.0.into(),
+                        academic_year_name: year_name.into(),
                         payment_type_name: r.1.into(),
                         payment_type_type: r.2.into(),
                         month_name: r.3.into(),
@@ -1477,6 +1784,8 @@ fn load_student_details_ui(
                         remaining_raw: r.7 as i32,
                         status: r.8.into(),
                         is_selected: is_sel,
+                        is_group_header: false,
+                        group_header_title: "".into(),
                     });
                 }
             }
@@ -1546,7 +1855,9 @@ fn update_cart_and_selection_ui(app: &AppWindow, state: &SlintAppState) {
     let mut updated_assignments = Vec::new();
     for i in 0..assignments.row_count() {
         if let Some(mut item) = assignments.row_data(i) {
-            item.is_selected = state.cart.iter().any(|c| c.assignment_id == item.id.as_str());
+            if !item.is_group_header {
+                item.is_selected = state.cart.iter().any(|c| c.assignment_id == item.id.as_str());
+            }
             updated_assignments.push(item);
         }
     }
@@ -1727,11 +2038,11 @@ fn refresh_reports_tab_ui(app: &AppWindow, conn_arc: &Arc<Mutex<Connection>>) {
 fn refresh_sync_status_ui(app: &AppWindow, conn_arc: &Arc<Mutex<Connection>>) {
     if let Ok(conn) = conn_arc.lock() {
         let pending_payments: i64 = conn.query_row(
-            "SELECT count(*) FROM payments WHERE is_pushed = 0;", [], |r| r.get(0)
+            "SELECT count(*) FROM payments WHERE sync_status = 'pending_push';", [], |r| r.get(0)
         ).unwrap_or(0);
 
         let pending_savings: i64 = conn.query_row(
-            "SELECT count(*) FROM savings_mutations WHERE is_pushed = 0;", [], |r| r.get(0)
+            "SELECT count(*) FROM savings_transactions WHERE sync_status = 'pending_push';", [], |r| r.get(0)
         ).unwrap_or(0);
 
         let total_pending = pending_payments + pending_savings;
@@ -1739,7 +2050,7 @@ fn refresh_sync_status_ui(app: &AppWindow, conn_arc: &Arc<Mutex<Connection>>) {
         app.set_sync_pending_count(total_pending.to_string().into());
 
         // Muat Config Server
-        if let Ok(mut stmt) = conn.prepare("SELECT key, value FROM settings WHERE key IN ('api_url', 'api_token', 'last_sync_time');") {
+        if let Ok(mut stmt) = conn.prepare("SELECT key, value FROM settings WHERE key IN ('api_url', 'api_key', 'api_token', 'last_synced_at');") {
             if let Ok(rows) = stmt.query_map([], |row| {
                 let k: String = row.get(0)?;
                 let v: String = row.get(1)?;
@@ -1748,12 +2059,135 @@ fn refresh_sync_status_ui(app: &AppWindow, conn_arc: &Arc<Mutex<Connection>>) {
                 for r in rows.flatten() {
                     match r.0.as_str() {
                         "api_url" => app.set_sync_base_url(r.1.into()),
-                        "api_token" => app.set_sync_api_token(r.1.into()),
-                        "last_sync_time" => app.set_sync_last_time(r.1.into()),
+                        "api_key" | "api_token" => {
+                            if !r.1.is_empty() {
+                                app.set_sync_api_token(r.1.into());
+                            }
+                        }
+                        "last_synced_at" => {
+                            if r.1.is_empty() || r.1.starts_with("1970") {
+                                app.set_sync_last_time("Belum pernah sinkron".into());
+                            } else {
+                                app.set_sync_last_time(r.1.into());
+                            }
+                        }
                         _ => {}
                     }
                 }
             }
         }
+    }
+}
+
+fn process_deep_link_url(
+    raw_url: &str,
+    app: &AppWindow,
+    conn_arc: &Arc<Mutex<Connection>>,
+    state: &Arc<Mutex<SlintAppState>>,
+) {
+    if !raw_url.starts_with("partisipasi-sekolah://") && !raw_url.starts_with("partisipasi://") {
+        return;
+    }
+    println!("[INFO] Memproses deep-link otorisasi: {}", raw_url);
+    let query_str = raw_url.split_once('?').map(|x| x.1).unwrap_or("");
+    let mut token = String::new();
+    let mut nama = String::new();
+    let mut role = String::new();
+    let mut code = String::new();
+
+    for pair in query_str.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            let decoded = urlencoding::decode(v).unwrap_or_else(|_| v.into()).to_string();
+            match k {
+                "token" => token = decoded,
+                "nama" => nama = decoded,
+                "role" => role = decoded,
+                "code" => code = decoded,
+                _ => {}
+            }
+        }
+    }
+
+    if !token.is_empty() {
+        if let Ok(conn) = conn_arc.lock() {
+            let _ = conn.execute(
+                "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_token', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                [&token],
+            );
+            let _ = conn.execute(
+                "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_key', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                [&token],
+            );
+            let u_id = "online-user".to_string();
+            let _ = conn.execute(
+                "INSERT INTO user_tokens (id, user_id, token, expires_at, created_at)
+                 VALUES (lower(hex(randomblob(16))), ?1, ?2, datetime('now', '+30 days'), datetime('now'));",
+                [&u_id, &token],
+            );
+            if !nama.is_empty() {
+                let default_role = "admin".to_string();
+                let role_to_save = if role.is_empty() { &default_role } else { &role };
+                let _ = conn.execute(
+                    "INSERT INTO users (id, username, password_hash, nama, role, is_active, created_at)
+                     VALUES (?1, ?2, 'oauth', ?3, ?4, 1, datetime('now'))
+                     ON CONFLICT(id) DO UPDATE SET nama = excluded.nama, role = excluded.role;",
+                    [&u_id, &nama, &nama, role_to_save],
+                );
+            }
+        }
+        {
+            let mut st = state.lock().unwrap();
+            st.user_token = Some(token.clone());
+            if !nama.is_empty() { st.user_nama = nama.clone(); }
+            if !role.is_empty() { st.user_role = role.clone(); }
+            st.is_logged_in = true;
+        }
+        if !nama.is_empty() { app.set_user_name(nama.clone().into()); }
+        if !role.is_empty() { app.set_user_role(role.into()); }
+        app.set_is_logged_in(true);
+        app.set_sync_toast_message(format!("Otorisasi web berhasil! Selamat datang, {}.", nama).into());
+        app.set_sync_toast_is_error(false);
+        refresh_sync_status_ui(app, conn_arc);
+    } else if !code.is_empty() {
+        let app_weak = app.as_weak();
+        let conn_arc_cl = Arc::clone(conn_arc);
+        let state_cl = Arc::clone(state);
+        std::thread::spawn(move || {
+            let api_url: String = {
+                if let Ok(conn) = conn_arc_cl.lock() {
+                    conn.query_row("SELECT value FROM settings WHERE key = 'api_url';", [], |r| r.get(0)).unwrap_or_default()
+                } else {
+                    String::new()
+                }
+            };
+            if api_url.is_empty() { return; }
+            let rt = tokio::runtime::Runtime::new();
+            if let Ok(rt) = rt {
+                if let Ok(exchange) = rt.block_on(crate::sync::exchange_code_with_server(&api_url, "", &code)) {
+                    if let Ok(conn) = conn_arc_cl.lock() {
+                        let _ = crate::commands::save_exchanged_session(&conn, exchange.clone());
+                    }
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(app) = app_weak.upgrade() {
+                            {
+                                let mut st = state_cl.lock().unwrap();
+                                st.user_token = Some(exchange.token.clone());
+                                st.user_nama = exchange.user.nama.clone();
+                                st.user_role = exchange.user.role.clone();
+                                st.is_logged_in = true;
+                            }
+                            app.set_user_name(exchange.user.nama.into());
+                            app.set_user_role(exchange.user.role.into());
+                            app.set_is_logged_in(true);
+                            app.set_sync_toast_message("Otorisasi kode peramban berhasil!".into());
+                            app.set_sync_toast_is_error(false);
+                            refresh_sync_status_ui(&app, &conn_arc_cl);
+                        }
+                    });
+                }
+            }
+        });
     }
 }

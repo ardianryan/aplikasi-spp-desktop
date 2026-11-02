@@ -18,6 +18,7 @@ export struct BillSummaryData {
 
 export struct AssignmentData {
     id: string,
+    academic_year_name: string,
     payment_type_name: string,
     payment_type_type: string,
     month_name: string,
@@ -27,6 +28,8 @@ export struct AssignmentData {
     remaining_raw: int,
     status: string, // "lunas", "sebagian", "belum_bayar"
     is_selected: bool,
+    is_group_header: bool,
+    group_header_title: string,
 }
 
 export struct CartItemData {
@@ -58,24 +61,24 @@ component SummaryCard inherits Rectangle {
     height: 72px;
 
     HorizontalLayout {
-        padding-left: 16px;
-        padding-right: 16px;
-        spacing: 14px;
+        padding-left: 12px;
+        padding-right: 12px;
+        spacing: 10px;
 
         VerticalLayout {
             alignment: center;
-            width: 40px;
+            width: 36px;
             Rectangle {
-                width: 40px;
-                height: 40px;
+                width: 36px;
+                height: 36px;
                 background: root.card-light-color;
                 border-radius: 8px;
                 Image {
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
                     source: root.icon-src;
-                    width: 20px;
-                    height: 20px;
+                    width: 18px;
+                    height: 18px;
                     image-fit: contain;
                     colorize: root.card-color;
                 }
@@ -84,7 +87,7 @@ component SummaryCard inherits Rectangle {
 
         VerticalLayout {
             alignment: center;
-            spacing: 3px;
+            spacing: 2px;
             horizontal-stretch: 1;
             Text {
                 text: root.title;
@@ -94,7 +97,7 @@ component SummaryCard inherits Rectangle {
             }
             Text {
                 text: root.amount;
-                font-size: 18px;
+                font-size: 15px;
                 color: root.card-color;
                 font-weight: 800;
             }
@@ -404,12 +407,11 @@ export component PosView inherits Rectangle {
                                 padding-left: 12px;
                                 padding-right: 12px;
                                 spacing: 8px;
-                                alignment: center;
-                                Text { width: 32px; text: "Pilih"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
-                                Text { horizontal-stretch: 1; text: "Nama Pos / Periode Bulan"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
-                                Text { width: 100px; text: "Jumlah"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
-                                Text { width: 100px; text: "Sisa Bayar"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
-                                Text { width: 80px; text: "Status"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: center; }
+                                Text { width: 32px; text: "Pilih"; font-size: 11px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
+                                Text { horizontal-stretch: 1; text: "Nama Pos / Periode Bulan"; font-size: 11px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
+                                Text { width: 90px; text: "Jumlah"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { width: 90px; text: "Sisa Bayar"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { width: 75px; text: "Status"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: center; vertical-alignment: center; }
                             }
                         }
 
@@ -430,15 +432,40 @@ export component PosView inherits Rectangle {
                         if root.assignments.length > 0: Flickable {
                             vertical-stretch: 1;
                             VerticalLayout {
+                                alignment: start;
                                 spacing: 4px;
                                 for item in root.assignments: Rectangle {
-                                    height: 40px;
-                                    background: item.is_selected ? #eff6ff : touch-item.has-hover ? #f8fafc : transparent;
-                                    border-color: item.is_selected ? Theme.primary : Theme.border-muted;
-                                    border-width: 1px;
+                                    height: item.is_group_header ? 32px : 40px;
+                                    background: item.is_group_header ? #e2e8f0 : item.is_selected ? #eff6ff : touch-item.has-hover ? #f8fafc : transparent;
+                                    border-color: item.is_group_header ? transparent : item.is_selected ? Theme.primary : Theme.border-muted;
+                                    border-width: item.is_group_header ? 0px : 1px;
                                     border-radius: 6px;
 
-                                    HorizontalLayout {
+                                    if item.is_group_header: HorizontalLayout {
+                                        padding-left: 12px;
+                                        padding-right: 12px;
+                                        spacing: 8px;
+                                        VerticalLayout {
+                                            alignment: center;
+                                            width: 14px;
+                                            Image {
+                                                source: @image-url("../assets/icons/bill.svg");
+                                                width: 13px;
+                                                height: 13px;
+                                                image-fit: contain;
+                                                colorize: Theme.primary;
+                                            }
+                                        }
+                                        Text {
+                                            text: item.group_header_title;
+                                            font-size: 12px;
+                                            font-weight: 800;
+                                            color: Theme.primary;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    if !item.is_group_header: HorizontalLayout {
                                         padding-left: 12px;
                                         padding-right: 12px;
                                         spacing: 8px;
@@ -474,7 +501,7 @@ export component PosView inherits Rectangle {
                                         }
 
                                         Text {
-                                            width: 100px;
+                                            width: 90px;
                                             text: item.amount;
                                             font-size: 12px;
                                             color: Theme.text-muted;
@@ -483,7 +510,7 @@ export component PosView inherits Rectangle {
                                         }
 
                                         Text {
-                                            width: 100px;
+                                            width: 90px;
                                             text: item.remaining_amount;
                                             font-size: 12px;
                                             font-weight: 700;
@@ -494,9 +521,9 @@ export component PosView inherits Rectangle {
 
                                         VerticalLayout {
                                             alignment: center;
-                                            width: 80px;
+                                            width: 75px;
                                             Rectangle {
-                                                width: 80px;
+                                                width: 75px;
                                                 height: 20px;
                                                 border-radius: 10px;
                                                 background: item.status == "lunas" ? Theme.emerald-light : item.status == "sebagian" ? Theme.amber-light : Theme.rose-light;
@@ -513,7 +540,7 @@ export component PosView inherits Rectangle {
                                     }
 
                                     touch-item := TouchArea {
-                                        enabled: item.remaining_raw > 0;
+                                        enabled: !item.is_group_header && item.remaining_raw > 0;
                                         clicked => { root.toggle-assignment-selection(item.id); }
                                         mouse-cursor: pointer;
                                     }
@@ -526,7 +553,7 @@ export component PosView inherits Rectangle {
 
             // KANAN: Petunjuk Pintasan (Jika siswa belum dipilih) ATAU Keranjang Bayar
             if root.current-student.id == "": Rectangle {
-                width: 340px;
+                width: 290px;
                 background: Theme.bg-card;
                 border-color: Theme.border;
                 border-width: 1px;
@@ -631,7 +658,7 @@ export component PosView inherits Rectangle {
             }
 
             if root.current-student.id != "": Rectangle {
-                width: 340px;
+                width: 290px;
                 background: Theme.bg-card;
                 border-color: Theme.border;
                 border-width: 1px;
@@ -927,6 +954,7 @@ export component PosView inherits Rectangle {
                 if root.today-payments.length > 0: Flickable {
                     vertical-stretch: 1;
                     VerticalLayout {
+                        alignment: start;
                         spacing: 4px;
                         for tx in root.today-payments: Rectangle {
                             height: 32px;
@@ -988,8 +1016,9 @@ export component PosView inherits Rectangle {
                                     Rectangle {
                                         width: 24px;
                                         height: 22px;
-                                        background: Theme.primary-light;
+                                        background: touch-today-p.has-hover ? #dbeafe : Theme.primary-light;
                                         border-radius: 4px;
+                                        animate background { duration: 150ms; }
                                         Image {
                                             x: (parent.width - self.width) / 2;
                                             y: (parent.height - self.height) / 2;
@@ -999,7 +1028,7 @@ export component PosView inherits Rectangle {
                                             image-fit: contain;
                                             colorize: Theme.primary;
                                         }
-                                        TouchArea {
+                                        touch-today-p := TouchArea {
                                             clicked => { root.print-receipt-clicked(tx.transaction_code); }
                                             mouse-cursor: pointer;
                                         }

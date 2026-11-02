@@ -112,16 +112,19 @@ export component SyncView inherits Rectangle {
                     Rectangle {
                         width: 120px;
                         height: 36px;
-                        background: Theme.primary-light;
+                        background: root.is-testing ? #e2e8f0 : touch-test.has-hover ? #e2e8f0 : #ffffff;
+                        border-color: Theme.border;
+                        border-width: 1px;
                         border-radius: 6px;
-                        TouchArea {
+                        animate background { duration: 150ms; }
+                        touch-test := TouchArea {
                             enabled: !root.is-testing;
                             clicked => { root.test-connection-clicked(root.base-url, root.api-token); }
                             mouse-cursor: pointer;
                         }
                         Text {
                             text: root.is-testing ? "Menguji..." : "Uji Koneksi";
-                            color: Theme.on-primary-light;
+                            color: Theme.text-main;
                             font-size: 12px;
                             font-weight: 700;
                             horizontal-alignment: center;
@@ -130,11 +133,12 @@ export component SyncView inherits Rectangle {
                     }
 
                     Rectangle {
-                        width: 140px;
+                        width: 150px;
                         height: 36px;
-                        background: Theme.primary;
+                        background: touch-save.has-hover ? Theme.primary-hover : Theme.primary;
                         border-radius: 6px;
-                        TouchArea {
+                        animate background { duration: 150ms; }
+                        touch-save := TouchArea {
                             clicked => { root.save-settings-clicked(root.base-url, root.api-token); }
                             mouse-cursor: pointer;
                         }
@@ -228,9 +232,10 @@ export component SyncView inherits Rectangle {
                 Rectangle {
                     width: 200px;
                     height: 40px;
-                    background: root.is-syncing ? #94a3b8 : Theme.emerald;
+                    background: root.is-syncing ? #94a3b8 : touch-sync-now.has-hover ? Theme.emerald-hover : Theme.emerald;
                     border-radius: 6px;
-                    TouchArea {
+                    animate background { duration: 150ms; }
+                    touch-sync-now := TouchArea {
                         enabled: !root.is-syncing;
                         clicked => { root.trigger-sync-clicked(); }
                         mouse-cursor: pointer;
