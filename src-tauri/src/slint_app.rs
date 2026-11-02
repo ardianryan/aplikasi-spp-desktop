@@ -44,6 +44,103 @@ pub struct SlintAppState {
     pub user_nama: String,
     pub user_role: String,
     pub is_logged_in: bool,
+    pub collapsed_years: std::collections::HashSet<String>,
+}
+
+fn get_launch_agent_path() -> Option<std::path::PathBuf> {
+    dirs::home_dir().map(|h| h.join("Library/LaunchAgents/me.ppti.partisipasi-sekolah.plist"))
+}
+
+fn is_autostart_active() -> bool {
+    if let Some(path) = get_launch_agent_path() {
+        path.exists()
+    } else {
+        false
+    }
+}
+
+fn set_autostart_active(enabled: bool) -> Result<(), Box<dyn std::error::Error>> {
+    let plist_path = match get_launch_agent_path() {
+        Some(p) => p,
+        None => return Err("Direktori pengguna tidak ditemukan".into()),
+    };
+
+    if enabled {
+        let exe_path = std::env::current_exe()?;
+        let exe_str = exe_path.to_string_lossy();
+        if let Some(parent) = plist_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let plist_content = format!(
+r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>me.ppti.partisipasi-sekolah</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <false/>
+</dict>
+</plist>"#,
+            exe_str
+        );
+        std::fs::write(&plist_path, plist_content)?;
+    } else {
+        if plist_path.exists() {
+            let _ = std::fs::remove_file(&plist_path);
+        }
+    }
+    Ok(())
+}
+
+fn check_updates_background(app_weak: slint::Weak<AppWindow>) {
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new();
+        if let Ok(rt) = rt {
+            rt.block_on(async {
+                let endpoint = "https://github.com/ardianryan/aplikasi-spp-desktop/releases/latest/download/latest.json";
+                let client = match reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(5))
+                    .build() {
+                    Ok(c) => c,
+                    Err(_) => return,
+                };
+                match client.get(endpoint).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        if let Ok(val) = resp.json::<serde_json::Value>().await {
+                            let remote_ver = val.get("version").and_then(|v| v.as_str()).unwrap_or("0.2.0");
+                            let current_ver = "0.2.0";
+                            let clean_remote = remote_ver.trim_start_matches('v');
+                            let clean_current = current_ver.trim_start_matches('v');
+                            let status_text = if clean_remote == clean_current {
+                                format!("Aplikasi sudah menggunakan versi terbaru (v{}).", current_ver)
+                            } else {
+                                format!("Tersedia versi baru (v{}). Silakan unduh di GitHub Release.", clean_remote)
+                            };
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(app) = app_weak.upgrade() {
+                                    app.set_update_status_text(status_text.into());
+                                }
+                            });
+                        }
+                    }
+                    _ => {
+                        let _ = slint::invoke_from_event_loop(move || {
+                            if let Some(app) = app_weak.upgrade() {
+                                app.set_update_status_text("Versi resmi v0.2.0 (Arsitektur Native Offline).".into());
+                            }
+                        });
+                    }
+                }
+            });
+        }
+    });
 }
 
 pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
@@ -53,17 +150,21 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     let maybe_deep_link = args.iter().find(|a| a.starts_with("partisipasi-sekolah://") || a.starts_with("partisipasi://")).cloned();
 
+    // Pastikan single-instance: jika aplikasi sudah berjalan, alihkan fokus/deep-link lalu keluar
     #[cfg(unix)]
     {
         let socket_path = "/tmp/partisipasi_desktop_ipc.sock";
-        if let Some(ref url) = maybe_deep_link {
-            if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(socket_path) {
-                use std::io::Write;
-                let _ = writeln!(stream, "{}", url);
-                let _ = stream.flush();
-                println!("[INFO] Deep-link berhasil diteruskan ke instance aplikasi aktif: {}", url);
-                return Ok(());
-            }
+        if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(socket_path) {
+            use std::io::Write;
+            let msg = if let Some(ref url) = maybe_deep_link {
+                url.clone()
+            } else {
+                "ACTIVATE".to_string()
+            };
+            let _ = writeln!(stream, "{}", msg);
+            let _ = stream.flush();
+            println!("[INFO] Instance aplikasi sudah berjalan. Perintah '{}' dikirim ke instance aktif.", msg);
+            return Ok(());
         }
     }
 
@@ -91,7 +192,30 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
         user_nama: "Kasir Loket 1".to_string(),
         user_role: "Petugas Kasir".to_string(),
         is_logged_in: false,
+        collapsed_years: std::collections::HashSet::new(),
     }));
+
+    // Close-to-Tray (Sembunyikan ke background saat tombol tutup ditekan agar autosync tetap aktif)
+    app.window().on_close_requested(|| {
+        println!("[INFO] Tombol close ditekan. Menyembunyikan jendela ke background agar antrean autosync tetap beroperasi.");
+        slint::CloseRequestResponse::HideWindow
+    });
+
+    // Inisialisasi status autostart & pembaruan sistem di latar belakang
+    app.set_autostart_enabled(is_autostart_active());
+    check_updates_background(app.as_weak());
+
+    // Cek apakah instalasi baru (fresh install) jika belum ada api_url yang terkonfigurasi
+    {
+        if let Ok(conn) = conn_arc.lock() {
+            let api_url: String = conn.query_row(
+                "SELECT value FROM settings WHERE key = 'api_url';",
+                [],
+                |r| r.get(0),
+            ).unwrap_or_default();
+            app.set_is_fresh_install(api_url.trim().is_empty());
+        }
+    }
 
     // Cek Konfigurasi Server & PIN Offline
     {
@@ -185,7 +309,10 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                                 let state = Arc::clone(&state_ipc);
                                 let _ = slint::invoke_from_event_loop(move || {
                                     if let Some(app) = app_weak.upgrade() {
-                                        process_deep_link_url(&trimmed, &app, &conn_arc, &state);
+                                        let _ = app.window().show();
+                                        if trimmed != "ACTIVATE" {
+                                            process_deep_link_url(&trimmed, &app, &conn_arc, &state);
+                                        }
                                     }
                                 });
                             }
@@ -348,6 +475,43 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
 
                 // Update UI assignments selection state & Cart list
                 update_cart_and_selection_ui(&app, &state_lock);
+            }
+        });
+    }
+
+    // D2. Toggle Academic Year Group Accordion Collapse/Expand
+    {
+        let state = Arc::clone(&state);
+        let app_weak = app_weak.clone();
+        app.on_toggle_year_collapse(move |year_name_slint| {
+            if let Some(app) = app_weak.upgrade() {
+                let year_str = year_name_slint.to_string();
+                let is_now_collapsed = {
+                    let mut st = state.lock().unwrap();
+                    if st.collapsed_years.contains(&year_str) {
+                        st.collapsed_years.remove(&year_str);
+                        false
+                    } else {
+                        st.collapsed_years.insert(year_str.clone());
+                        true
+                    }
+                };
+
+                let assignments_model = app.get_assignments();
+                let mut updated_vec = Vec::new();
+                for i in 0..assignments_model.row_count() {
+                    if let Some(mut item) = assignments_model.row_data(i) {
+                        if item.academic_year_name == year_str.as_str() {
+                            if item.is_group_header {
+                                item.is_collapsed = is_now_collapsed;
+                            } else {
+                                item.is_hidden = is_now_collapsed;
+                            }
+                        }
+                        updated_vec.push(item);
+                    }
+                }
+                app.set_assignments(Rc::new(VecModel::from(updated_vec)).into());
             }
         });
     }
@@ -957,14 +1121,12 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    // Save Sync Settings from Sync Tab
+    // Save Sync Settings from Sync Tab (Zero-Config token managed automatically)
     {
         let conn_arc = Arc::clone(&conn_arc);
         let app_weak = app_weak.clone();
-        let state = Arc::clone(&state);
-        app.on_save_sync_settings(move |url_slint, token_slint| {
+        app.on_save_sync_settings(move |url_slint| {
             let mut raw_url = url_slint.to_string().trim().to_string();
-            let raw_token = token_slint.to_string().trim().to_string();
 
             if raw_url.is_empty() {
                 if let Some(app) = app_weak.upgrade() {
@@ -978,104 +1140,18 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
             }
             let clean_url = raw_url.trim_end_matches('/').to_string();
 
-            // Cek apakah input berupa 6-digit angka (pairing code / kode otorisasi dari peramban)
-            let is_six_digits = raw_token.len() == 6 && raw_token.chars().all(|c| c.is_ascii_digit());
-            if is_six_digits {
-                let app_weak2 = app_weak.clone();
-                let conn_arc2 = Arc::clone(&conn_arc);
-                let state2 = Arc::clone(&state);
-                let clean_url_clone = clean_url.clone();
-                let code_clone = raw_token.clone();
-
-                if let Some(app) = app_weak.upgrade() {
-                    app.set_sync_toast_message("Sedang menukar kode otorisasi 6-digit...".into());
-                    app.set_sync_toast_is_error(false);
-                }
-
-                std::thread::spawn(move || {
-                    let rt = tokio::runtime::Runtime::new();
-                    let res = if let Ok(rt) = rt {
-                        rt.block_on(async {
-                            crate::sync::exchange_code_with_server(&clean_url_clone, "", &code_clone).await
-                        })
-                    } else {
-                        Err("Gagal membuat runtime async".into())
-                    };
-
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(app) = app_weak2.upgrade() {
-                            match res {
-                                Ok(exchange) => {
-                                    if let Ok(conn) = conn_arc2.lock() {
-                                        let _ = conn.execute(
-                                            "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_url', ?1)
-                                             ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
-                                            [&clean_url_clone],
-                                        );
-                                        let _ = conn.execute(
-                                            "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_key', ?1)
-                                             ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
-                                            [&exchange.api_key],
-                                        );
-                                        let _ = conn.execute(
-                                            "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_token', ?1)
-                                             ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
-                                            [&exchange.token],
-                                        );
-                                        let _ = crate::commands::save_exchanged_session(&conn, exchange.clone());
-                                    }
-                                    {
-                                        let mut st = state2.lock().unwrap();
-                                        st.user_token = Some(exchange.token.clone());
-                                        st.user_nama = exchange.user.nama.clone();
-                                        st.user_role = exchange.user.role.clone();
-                                        st.is_logged_in = true;
-                                    }
-                                    app.set_sync_base_url(clean_url_clone.into());
-                                    app.set_sync_api_token(exchange.token.into());
-                                    app.set_user_name(exchange.user.nama.into());
-                                    app.set_user_role(exchange.user.role.into());
-                                    app.set_sync_toast_message("Kode otorisasi berhasil ditukar & disimpan!".into());
-                                    app.set_sync_toast_is_error(false);
-                                    app.set_is_online(true);
-                                    refresh_sync_status_ui(&app, &conn_arc2);
-                                }
-                                Err(e) => {
-                                    app.set_sync_toast_message(format!("Gagal menukar kode: {}", e).into());
-                                    app.set_sync_toast_is_error(true);
-                                }
-                            }
-                        }
-                    });
-                });
-                return;
-            }
-
-            // Bukan 6 digit -> Simpan token / API key biasa
             if let Ok(conn) = conn_arc.lock() {
                 let _ = conn.execute(
                     "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_url', ?1)
                      ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
                     [&clean_url],
                 );
-                if !raw_token.is_empty() {
-                    let _ = conn.execute(
-                        "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_key', ?1)
-                         ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
-                        [&raw_token],
-                    );
-                    let _ = conn.execute(
-                        "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_token', ?1)
-                         ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
-                        [&raw_token],
-                    );
-                }
             }
 
             if let Some(app) = app_weak.upgrade() {
-                app.set_sync_base_url(clean_url.into());
-                app.set_sync_api_token(raw_token.into());
-                app.set_sync_toast_message("Pengaturan server & token berhasil disimpan.".into());
+                app.set_sync_base_url(clean_url.clone().into());
+                app.set_api_endpoint_url(clean_url.into());
+                app.set_sync_toast_message("Pengaturan sambungan peladen berhasil disimpan.".into());
                 app.set_sync_toast_is_error(false);
                 refresh_sync_status_ui(&app, &conn_arc);
             }
@@ -1084,10 +1160,10 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
 
     // Test Sync Connection from Sync Tab
     {
+        let conn_arc = Arc::clone(&conn_arc);
         let app_weak = app_weak.clone();
-        app.on_test_sync_connection(move |url_slint, token_slint| {
+        app.on_test_sync_connection(move |url_slint| {
             let mut raw_url = url_slint.to_string().trim().to_string();
-            let raw_token = token_slint.to_string().trim().to_string();
 
             if raw_url.is_empty() {
                 if let Some(app) = app_weak.upgrade() {
@@ -1108,6 +1184,18 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
             }
 
             let app_weak2 = app_weak.clone();
+            let token_opt = {
+                if let Ok(conn) = conn_arc.lock() {
+                    conn.query_row(
+                        "SELECT value FROM settings WHERE key = 'api_key' UNION SELECT value FROM settings WHERE key = 'api_token' LIMIT 1;",
+                        [],
+                        |r| r.get::<_, String>(0)
+                    ).ok()
+                } else {
+                    None
+                }
+            };
+
             std::thread::spawn(move || {
                 let ping_url = format!("{}/api/v1/sync/status", clean_url);
                 let rt = tokio::runtime::Runtime::new();
@@ -1119,9 +1207,11 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                             .map_err(|e| e.to_string())?;
 
                         let mut req = client.get(&ping_url);
-                        if !raw_token.is_empty() {
-                            req = req.header("X-API-Key", &raw_token)
-                                     .header("Authorization", format!("Bearer {}", raw_token));
+                        if let Some(ref tok) = token_opt {
+                            if !tok.is_empty() {
+                                req = req.header("X-API-Key", tok)
+                                         .header("Authorization", format!("Bearer {}", tok));
+                            }
                         }
                         let resp = req.send().await.map_err(|e| format!("Tidak dapat menghubungi server: {}", e))?;
                         let status = resp.status();
@@ -1155,6 +1245,134 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 });
             });
+        });
+    }
+
+    // Toggle Autostart / Jalankan Otomatis saat Komputer Menyala
+    {
+        let app_weak = app_weak.clone();
+        app.on_toggle_autostart_clicked(move || {
+            let current = is_autostart_active();
+            let new_state = !current;
+            if let Err(e) = set_autostart_active(new_state) {
+                eprintln!("[ERROR] Gagal mengubah status autostart: {}", e);
+            }
+            let active_now = is_autostart_active();
+            if let Some(app) = app_weak.upgrade() {
+                app.set_autostart_enabled(active_now);
+                let msg = if active_now {
+                    "Aplikasi akan otomatis berjalan saat komputer dinyalakan."
+                } else {
+                    "Jalankan otomatis saat startup dinonaktifkan."
+                };
+                app.set_sync_toast_message(msg.into());
+                app.set_sync_toast_is_error(false);
+            }
+        });
+    }
+
+    // Setup Wizard Onboarding: Uji Sambungan Peladen
+    {
+        let app_weak = app_weak.clone();
+        app.on_test_wizard_connection(move |url_slint| {
+            let mut raw_url = url_slint.to_string().trim().to_string();
+            if raw_url.is_empty() {
+                if let Some(app) = app_weak.upgrade() {
+                    app.set_wizard_test_message("URL server tidak boleh kosong.".into());
+                    app.set_wizard_test_success(false);
+                }
+                return;
+            }
+            if !raw_url.starts_with("http://") && !raw_url.starts_with("https://") {
+                raw_url = format!("http://{}", raw_url);
+            }
+            let clean_url = raw_url.trim_end_matches('/').to_string();
+
+            if let Some(app) = app_weak.upgrade() {
+                app.set_is_testing_wizard(true);
+                app.set_wizard_test_message("Menguji koneksi ke peladen...".into());
+            }
+
+            let app_weak2 = app_weak.clone();
+            std::thread::spawn(move || {
+                let ping_url = format!("{}/api/v1/sync/status", clean_url);
+                let rt = tokio::runtime::Runtime::new();
+                let res = if let Ok(rt) = rt {
+                    rt.block_on(async {
+                        let client = reqwest::Client::builder()
+                            .timeout(std::time::Duration::from_secs(6))
+                            .build()
+                            .map_err(|e| e.to_string())?;
+                        let resp = client.get(&ping_url).send().await
+                            .map_err(|e| format!("Tidak dapat terhubung: {}", e))?;
+                        let st = resp.status();
+                        if st.is_success() || st.as_u16() == 401 {
+                            Ok(format!("Terhubung ke peladen (HTTP {})", st.as_u16()))
+                        } else {
+                            Err(format!("Peladen merespons status {}", st.as_u16()))
+                        }
+                    })
+                } else {
+                    Err("Runtime async gagal diinisialisasi".into())
+                };
+
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(app) = app_weak2.upgrade() {
+                        app.set_is_testing_wizard(false);
+                        match res {
+                            Ok(msg) => {
+                                app.set_wizard_test_message(format!("✅ {}", msg).into());
+                                app.set_wizard_test_success(true);
+                            }
+                            Err(e) => {
+                                app.set_wizard_test_message(format!("❌ Sambungan gagal: {}", e).into());
+                                app.set_wizard_test_success(false);
+                            }
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    // Setup Wizard Onboarding: Selesaikan Penyiapan Awal
+    {
+        let conn_arc = Arc::clone(&conn_arc);
+        let app_weak = app_weak.clone();
+        app.on_finish_wizard(move |url_slint| {
+            let mut raw_url = url_slint.to_string().trim().to_string();
+            if !raw_url.starts_with("http://") && !raw_url.starts_with("https://") {
+                raw_url = format!("http://{}", raw_url);
+            }
+            let clean_url = raw_url.trim_end_matches('/').to_string();
+
+            if let Ok(conn) = conn_arc.lock() {
+                let _ = conn.execute(
+                    "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_url', ?1)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                    [&clean_url],
+                );
+            }
+
+            if let Some(app) = app_weak.upgrade() {
+                app.set_api_endpoint_url(clean_url.clone().into());
+                app.set_sync_base_url(clean_url.into());
+                app.set_is_fresh_install(false);
+                app.set_sync_toast_message("Konfigurasi awal berhasil diselesaikan!".into());
+                app.set_sync_toast_is_error(false);
+                refresh_sync_status_ui(&app, &conn_arc);
+            }
+        });
+    }
+
+    // Periksa Pembaruan Sistem (Check for Updates Callback)
+    {
+        let app_weak = app_weak.clone();
+        app.on_check_for_updates(move || {
+            if let Some(app) = app_weak.upgrade() {
+                app.set_update_status_text("Sedang memeriksa versi terbaru dari repositori resmi...".into());
+            }
+            check_updates_background(app_weak.clone());
         });
     }
 
@@ -1734,23 +1952,52 @@ fn load_student_details_ui(
 
                 Ok((id, name, t_type, month_name.to_string(), amount, paid, relief, remaining, status, year_name, is_active))
             }) {
-                let mut current_year: Option<String> = None;
-                for r in rows.flatten() {
+                let all_rows: Vec<_> = rows.flatten().collect();
+                let mut year_stats: std::collections::HashMap<String, (i32, f64)> = std::collections::HashMap::new();
+
+                for r in &all_rows {
                     total_tagihan += r.4;
                     total_dibayar += r.5;
                     total_keringanan += r.6;
                     total_tunggakan += r.7;
 
+                    let stat = year_stats.entry(r.9.clone()).or_insert((0, 0.0));
+                    stat.0 += 1;
+                    stat.1 += r.7; // remaining
+                }
+
+                // Reset status collapsible untuk siswa baru: TP aktif dibuka, TP lama diciutkan (default)
+                {
+                    let mut st = state.lock().unwrap();
+                    st.collapsed_years.clear();
+                    for r in &all_rows {
+                        if r.10 != 1 {
+                            st.collapsed_years.insert(r.9.clone());
+                        }
+                    }
+                }
+
+                let mut current_year: Option<String> = None;
+                for r in all_rows {
                     let year_name = r.9.clone();
-                    let is_active = r.10;
+                    let is_active = r.10 == 1;
 
                     // Sisipkan Header Grup Tahun Pelajaran jika berganti
                     if current_year.as_ref() != Some(&year_name) {
                         current_year = Some(year_name.clone());
-                        let header_title = if is_active == 1 {
+                        let (count_bills, rem_sum) = year_stats.get(&year_name).cloned().unwrap_or((0, 0.0));
+                        let is_collapsed = state.lock().unwrap().collapsed_years.contains(&year_name);
+
+                        let header_title = if is_active {
                             format!("Tahun Pelajaran {} (Aktif)", year_name)
                         } else {
                             format!("Tahun Pelajaran {}", year_name)
+                        };
+
+                        let rem_text = if rem_sum > 0.0 {
+                            format!("Sisa: {}", format_idr(rem_sum))
+                        } else {
+                            "Lunas ✓".to_string()
                         };
 
                         assignments_vec.push(AssignmentData {
@@ -1767,9 +2014,15 @@ fn load_student_details_ui(
                             is_selected: false,
                             is_group_header: true,
                             group_header_title: header_title.into(),
+                            is_active_year: is_active,
+                            is_collapsed,
+                            is_hidden: false,
+                            total_bills_in_year: count_bills,
+                            total_remaining_in_year: rem_text.into(),
                         });
                     }
 
+                    let is_collapsed = state.lock().unwrap().collapsed_years.contains(&year_name);
                     let is_sel = state.lock().unwrap().cart.iter().any(|c| c.assignment_id == r.0);
 
                     assignments_vec.push(AssignmentData {
@@ -1786,6 +2039,11 @@ fn load_student_details_ui(
                         is_selected: is_sel,
                         is_group_header: false,
                         group_header_title: "".into(),
+                        is_active_year: is_active,
+                        is_collapsed: false,
+                        is_hidden: is_collapsed,
+                        total_bills_in_year: 0,
+                        total_remaining_in_year: "".into(),
                     });
                 }
             }

@@ -158,7 +158,7 @@ export component HistoryView inherits Rectangle {
                         Text { width: 110px; text: "Total"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
                         Text { width: 140px; text: "Tanggal & Jam"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
                         Text { width: 85px; text: "Status Sync"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: center; vertical-alignment: center; }
-                        Text { width: 48px; text: "Aksi"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: center; vertical-alignment: center; }
+                        Text { width: 75px; text: "Aksi"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: center; vertical-alignment: center; }
                     }
                 }
 
@@ -177,11 +177,12 @@ export component HistoryView inherits Rectangle {
 
                 if root.records.length > 0: Flickable {
                     vertical-stretch: 1;
+                    content-height: root.records.length * 46px;
                     VerticalLayout {
                         alignment: start;
                         spacing: 4px;
                         for row in root.records: Rectangle {
-                            height: 38px;
+                            height: 42px;
                             background: Theme.bg-secondary;
                             border-radius: 4px;
 
@@ -237,8 +238,8 @@ export component HistoryView inherits Rectangle {
                                 // Sync Status Badge
                                 Rectangle {
                                     width: 85px;
-                                    height: 20px;
-                                    border-radius: 10px;
+                                    height: 22px;
+                                    border-radius: 11px;
                                     background: row.sync_status == "synced" ? Theme.emerald-light : Theme.amber-light;
                                     Text {
                                         text: row.sync_status == "synced" ? "TERKIRIM" : "ANTREAN";
@@ -251,32 +252,38 @@ export component HistoryView inherits Rectangle {
                                 }
 
                                 // Tombol Cetak Struk
-                                Rectangle {
-                                    width: 48px;
-                                    height: 24px;
-                                    background: touch-print.has-hover ? #dbeafe : Theme.primary-light;
-                                    border-radius: 4px;
-                                    animate background { duration: 150ms; }
-                                    touch-print := TouchArea {
-                                        clicked => { root.print-receipt(row.transaction_code); }
-                                        mouse-cursor: pointer;
-                                    }
-                                    HorizontalLayout {
-                                        alignment: center;
-                                        spacing: 4px;
-                                        Image {
-                                            source: @image-url("../assets/icons/print.svg");
-                                            width: 11px;
-                                            height: 11px;
-                                            image-fit: contain;
-                                            colorize: Theme.primary;
+                                VerticalLayout {
+                                    alignment: center;
+                                    width: 75px;
+                                    Rectangle {
+                                        width: 70px;
+                                        height: 28px;
+                                        background: touch-print.has-hover ? #dbeafe : Theme.primary-light;
+                                        border-color: touch-print.has-hover ? #bfdbfe : transparent;
+                                        border-width: 1px;
+                                        border-radius: 6px;
+                                        animate background { duration: 150ms; }
+                                        touch-print := TouchArea {
+                                            clicked => { root.print-receipt(row.transaction_code); }
+                                            mouse-cursor: pointer;
                                         }
-                                        Text {
-                                            text: "Cetak";
-                                            font-size: 10px;
-                                            font-weight: 600;
-                                            color: Theme.on-primary-light;
-                                            vertical-alignment: center;
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            spacing: 5px;
+                                            Image {
+                                                source: @image-url("../assets/icons/print.svg");
+                                                width: 12px;
+                                                height: 12px;
+                                                image-fit: contain;
+                                                colorize: Theme.primary;
+                                            }
+                                            Text {
+                                                text: "Cetak";
+                                                font-size: 11px;
+                                                font-weight: 700;
+                                                color: Theme.on-primary-light;
+                                                vertical-alignment: center;
+                                            }
                                         }
                                     }
                                 }

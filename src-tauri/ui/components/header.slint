@@ -13,6 +13,7 @@ export component Header inherits Rectangle {
     callback search-changed(string);
     callback search-submitted(string);
     callback trigger-sync-clicked();
+    callback about-clicked();
 
     HorizontalLayout {
         padding-left: 20px;
@@ -151,6 +152,34 @@ export component Header inherits Rectangle {
                     touch-sync := TouchArea {
                         enabled: !root.is-syncing;
                         clicked => { root.trigger-sync-clicked(); }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                // Rounded Button Pill Tentang / Bantuan / Info Versi
+                Rectangle {
+                    width: 34px;
+                    height: 34px;
+                    background: touch-about.has-hover ? #e2e8f0 : Theme.bg-secondary;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: 17px;
+                    animate background { duration: 150ms; }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        Text {
+                            text: "ℹ";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: Theme.primary;
+                            vertical-alignment: center;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    touch-about := TouchArea {
+                        clicked => { root.about-clicked(); }
                         mouse-cursor: pointer;
                     }
                 }

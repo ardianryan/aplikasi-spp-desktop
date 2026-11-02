@@ -2,6 +2,7 @@ import { Theme } from "theme.slint";
 import { Sidebar } from "components/sidebar.slint";
 import { Header } from "components/header.slint";
 import { LoginView } from "views/login_view.slint";
+import { WizardView } from "views/wizard_view.slint";
 import { PosView, StudentData, BillSummaryData, AssignmentData, CartItemData, TodayPaymentData } from "views/pos_view.slint";
 import { SavingsView, SavingsHistoryData } from "views/savings_view.slint";
 import { HistoryView, HistoryRecord } from "views/history_view.slint";
@@ -119,6 +120,18 @@ export component AppWindow inherits Window {
     in property <string> test-connection-result: "";
     in property <string> sync-toast-message: "";
     in property <bool> sync-toast-is-error: false;
+    in-out property <bool> autostart-enabled: false;
+
+    // Fresh Install / Setup Wizard State
+    in-out property <bool> is-fresh-install: false;
+    in property <bool> is-testing-wizard: false;
+    in property <string> wizard-test-message: "";
+    in property <bool> wizard-test-success: false;
+
+    // About & Update Modal State
+    in-out property <bool> show-about-modal: false;
+    in-out property <string> update-status-text: "";
+    in-out property <bool> is-checking-update: false;
 
     // In-App Receipt Modal State
     in-out property <bool> show-receipt-modal: false;
@@ -131,6 +144,7 @@ export component AppWindow inherits Window {
     callback student-selected(string);
     callback clear-student();
     callback toggle-assignment(string);
+    callback toggle-year-collapse(string);
     callback remove-cart(string);
     callback set-payment-method(int);
     callback process-payment();
@@ -143,16 +157,30 @@ export component AppWindow inherits Window {
     callback print-receipt(string);
     callback execute-direct-print(string);
     callback close-receipt-modal();
-    callback test-sync-connection(string, string);
-    callback save-sync-settings(string, string);
+    callback test-sync-connection(string);
+    callback save-sync-settings(string);
+    callback toggle-autostart-clicked();
+    callback test-wizard-connection(string);
+    callback finish-wizard(string);
+    callback check-for-updates();
     callback save-server-url(string);
     callback sso-login();
     callback code-login(string);
     callback pin-login(string);
     callback logout();
 
-    // 0. Layar Masuk / Login View (Bila sesi kasir belum aktif)
-    if !root.is-logged-in: LoginView {
+    // -1. Setup Wizard Onboarding (Bila instalasi awal pertama kali)
+    if root.is-fresh-install: WizardView {
+        api-url: root.api-endpoint-url;
+        is-testing: root.is-testing-wizard;
+        test-message: root.wizard-test-message;
+        test-success: root.wizard-test-success;
+        test-connection-clicked(u) => { root.test-wizard-connection(u); }
+        finish-onboarding(u) => { root.finish-wizard(u); }
+    }
+
+    // 0. Layar Masuk / Login View (Bila sesi kasir belum aktif dan bukan instalasi awal)
+    if !root.is-fresh-install && !root.is-logged-in: LoginView {
         api-url: root.api-endpoint-url;
         has-offline-pin: root.has-offline-pin;
         error-message: root.login-error;
@@ -162,8 +190,8 @@ export component AppWindow inherits Window {
         save-server-url(u) => { root.save-server-url(u); }
     }
 
-    // 1. Terminal Kasir Utama (Bila kasir sudah masuk / terautentikasi)
-    if root.is-logged-in: HorizontalLayout {
+    // 1. Terminal Kasir Utama (Bila kasir sudah masuk / terautentikasi dan bukan fresh install)
+    if !root.is-fresh-install && root.is-logged-in: HorizontalLayout {
         // 1. Sidebar Navigasi Kiri (260px)
         Sidebar {
             active-tab: root.active-tab;
@@ -201,6 +229,9 @@ export component AppWindow inherits Window {
                 trigger-sync-clicked => {
                     root.trigger-sync();
                 }
+                about-clicked => {
+                    root.show-about-modal = true;
+                }
             }
 
             // View Stack Container
@@ -228,6 +259,7 @@ export component AppWindow inherits Window {
                     process-payment-clicked => { root.process-payment(); }
                     print-receipt-clicked(code) => { root.print-receipt(code); }
                     clear-selected-student => { root.clear-student(); }
+                    toggle-year-collapse(name) => { root.toggle-year-collapse(name); }
                 }
 
                 if root.active-tab == 1: SavingsView {
@@ -259,7 +291,10 @@ export component AppWindow inherits Window {
 
                 if root.active-tab == 4: SyncView {
                     base-url <=> root.sync-base-url;
-                    api-token <=> root.sync-api-token;
+                    user-name: root.user-name;
+                    user-role: root.user-role;
+                    is-authenticated: root.is-logged-in;
+                    autostart-enabled: root.autostart-enabled;
                     last-sync-time: root.sync-last-time;
                     pending-records-count: root.sync-pending-count;
                     sync-message: root.sync-message;
@@ -267,9 +302,10 @@ export component AppWindow inherits Window {
                     is-testing: root.is-testing-connection;
                     test-result: root.test-connection-result;
 
-                    test-connection-clicked(url, tok) => { root.test-sync-connection(url, tok); }
-                    save-settings-clicked(url, tok) => { root.save-sync-settings(url, tok); }
+                    test-connection-clicked(url) => { root.test-sync-connection(url); }
+                    save-settings-clicked(url) => { root.save-sync-settings(url); }
                     trigger-sync-clicked => { root.trigger-sync(); }
+                    toggle-autostart-clicked => { root.toggle-autostart-clicked(); }
                 }
 
                 // Toast Feedback Sinkronisasi Floating
@@ -702,6 +738,265 @@ export component AppWindow inherits Window {
                                 color: white;
                                 vertical-alignment: center;
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Modal Tentang & Pembaruan Sistem (About & Update Modal)
+    if root.show-about-modal: Rectangle {
+        x: 0px;
+        y: 0px;
+        width: 100%;
+        height: 100%;
+        background: #00000055;
+        z: 110;
+
+        // Backdrop Dismiss Touch
+        TouchArea {
+            clicked => { root.show-about-modal = false; }
+        }
+
+        // Dialog Card
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            width: 480px;
+            height: 440px;
+            background: #ffffff;
+            border-radius: 12px;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000040;
+
+            VerticalLayout {
+                padding: 24px;
+                spacing: 16px;
+
+                // Header Tentang
+                HorizontalLayout {
+                    alignment: space-between;
+                    height: 28px;
+
+                    Text {
+                        text: "Tentang Aplikasi";
+                        font-size: 16px;
+                        font-weight: 800;
+                        color: Theme.text-main;
+                        vertical-alignment: center;
+                    }
+
+                    Rectangle {
+                        width: 28px;
+                        height: 28px;
+                        border-radius: 14px;
+                        background: touch-close-about.has-hover ? #f1f5f9 : transparent;
+                        animate background { duration: 150ms; }
+                        touch-close-about := TouchArea {
+                            clicked => { root.show-about-modal = false; }
+                            mouse-cursor: pointer;
+                        }
+                        Text {
+                            text: "✕";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: Theme.text-muted;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Brand Banner
+                Rectangle {
+                    background: #f8fafc;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: 8px;
+
+                    HorizontalLayout {
+                        padding: 14px;
+                        spacing: 14px;
+
+                        VerticalLayout {
+                            alignment: center;
+                            width: 48px;
+                            Rectangle {
+                                width: 48px;
+                                height: 48px;
+                                border-radius: 10px;
+                                background: Theme.primary-light;
+                                if root.has-school-logo: Image {
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: root.school-logo;
+                                    width: 36px;
+                                    height: 36px;
+                                    image-fit: contain;
+                                }
+                                if !root.has-school-logo: Image {
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: @image-url("assets/icons/bill.svg");
+                                    width: 26px;
+                                    height: 26px;
+                                    image-fit: contain;
+                                    colorize: Theme.primary;
+                                }
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 3px;
+                            Text {
+                                text: "Partisipasi Sekolah Desktop";
+                                font-size: 15px;
+                                font-weight: 800;
+                                color: Theme.primary;
+                            }
+                            Text {
+                                text: "Sistem Kasir POS & Tabungan Offline Terenkripsi";
+                                font-size: 11px;
+                                color: Theme.text-muted;
+                            }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                Rectangle {
+                                    height: 18px;
+                                    background: #dbeafe;
+                                    border-radius: 9px;
+                                    HorizontalLayout {
+                                        padding-left: 8px;
+                                        padding-right: 8px;
+                                        Text {
+                                            text: "v0.2.0 Native Edition";
+                                            font-size: 10px;
+                                            font-weight: 700;
+                                            color: Theme.primary;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Info Details Grid
+                Rectangle {
+                    background: #ffffff;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: 8px;
+
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 8px;
+
+                        HorizontalLayout {
+                            alignment: space-between;
+                            Text { text: "Pengembang:"; font-size: 11px; color: Theme.text-muted; }
+                            Text { text: "Tim IT PPTI SMAN 1 Gedeg"; font-size: 11px; font-weight: 600; color: Theme.text-main; }
+                        }
+                        Rectangle { height: 1px; background: Theme.border-muted; }
+                        HorizontalLayout {
+                            alignment: space-between;
+                            Text { text: "Arsitektur Engine:"; font-size: 11px; color: Theme.text-muted; }
+                            Text { text: "100% Native Rust & Slint UI"; font-size: 11px; font-weight: 600; color: Theme.text-main; }
+                        }
+                        Rectangle { height: 1px; background: Theme.border-muted; }
+                        HorizontalLayout {
+                            alignment: space-between;
+                            Text { text: "Keamanan Basis Data:"; font-size: 11px; color: Theme.text-muted; }
+                            Text { text: "SQLite SQLCipher AES-256"; font-size: 11px; font-weight: 600; color: Theme.emerald; }
+                        }
+                        Rectangle { height: 1px; background: Theme.border-muted; }
+                        HorizontalLayout {
+                            alignment: space-between;
+                            Text { text: "Kompatibilitas Versi:"; font-size: 11px; color: Theme.text-muted; }
+                            Text { text: "Migrasi otomatis dari v0.1.2"; font-size: 11px; font-weight: 600; color: Theme.primary; }
+                        }
+                    }
+                }
+
+                // Status Pembaruan Otomatis Card
+                Rectangle {
+                    background: #f0fdf4;
+                    border-color: #bbf7d0;
+                    border-width: 1px;
+                    border-radius: 8px;
+
+                    VerticalLayout {
+                        padding: 10px;
+                        spacing: 4px;
+                        Text {
+                            text: "Status Pembaruan Otomatis:";
+                            font-size: 11px;
+                            font-weight: 700;
+                            color: Theme.emerald;
+                        }
+                        Text {
+                            text: root.update-status-text != "" ? root.update-status-text : "Aplikasi menggunakan rilis resmi v0.2.0.";
+                            font-size: 11px;
+                            color: Theme.text-main;
+                        }
+                    }
+                }
+
+                // Action Buttons
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: end;
+
+                    Rectangle {
+                        width: 160px;
+                        height: 36px;
+                        background: touch-check-update.has-hover ? #e2e8f0 : #f1f5f9;
+                        border-radius: 6px;
+                        animate background { duration: 150ms; }
+                        touch-check-update := TouchArea {
+                            clicked => { root.check-for-updates(); }
+                            mouse-cursor: pointer;
+                        }
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 6px;
+                            Image {
+                                source: @image-url("assets/icons/sync.svg");
+                                width: 13px;
+                                height: 13px;
+                                image-fit: contain;
+                                colorize: Theme.primary;
+                            }
+                            Text {
+                                text: "Periksa Pembaruan";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: Theme.primary;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: 90px;
+                        height: 36px;
+                        background: touch-about-close-btn.has-hover ? Theme.primary-hover : Theme.primary;
+                        border-radius: 6px;
+                        animate background { duration: 150ms; }
+                        touch-about-close-btn := TouchArea {
+                            clicked => { root.show-about-modal = false; }
+                            mouse-cursor: pointer;
+                        }
+                        Text {
+                            text: "Tutup";
+                            font-size: 12px;
+                            font-weight: 700;
+                            color: white;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
                         }
                     }
                 }

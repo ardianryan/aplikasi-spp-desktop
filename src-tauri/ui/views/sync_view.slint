@@ -3,8 +3,11 @@ import { Theme } from "../theme.slint";
 export component SyncView inherits Rectangle {
     background: Theme.bg-primary;
 
-    in-out property <string> base-url: "https://";
-    in-out property <string> api-token: "";
+    in-out property <string> base-url: "http://";
+    in property <string> user-name: "";
+    in property <string> user-role: "";
+    in property <bool> is-authenticated: false;
+    in property <bool> autostart-enabled: false;
     in property <string> last-sync-time: "Belum pernah sinkron";
     in property <string> pending-records-count: "0";
     in property <string> sync-message: "";
@@ -12,9 +15,10 @@ export component SyncView inherits Rectangle {
     in property <bool> is-testing: false;
     in property <string> test-result: "";
 
-    callback test-connection-clicked(string, string);
-    callback save-settings-clicked(string, string);
+    callback test-connection-clicked(string);
+    callback save-settings-clicked(string);
     callback trigger-sync-clicked();
+    callback toggle-autostart-clicked();
 
     VerticalLayout {
         padding: 16px;
@@ -46,7 +50,6 @@ export component SyncView inherits Rectangle {
 
         // Form Pengaturan Koneksi Server
         Rectangle {
-            height: 240px;
             background: Theme.bg-card;
             border-color: Theme.border;
             border-width: 1px;
@@ -54,7 +57,7 @@ export component SyncView inherits Rectangle {
 
             VerticalLayout {
                 padding: 16px;
-                spacing: 12px;
+                spacing: 14px;
 
                 Text {
                     text: "Konfigurasi Peladen Cloud";
@@ -63,9 +66,10 @@ export component SyncView inherits Rectangle {
                     color: Theme.text-main;
                 }
 
+                // 1. URL Server API Input
                 VerticalLayout {
                     spacing: 4px;
-                    Text { text: "URL Server API:"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
+                    Text { text: "Alamat Web Peladen Utama (Endpoint):"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
                     Rectangle {
                         height: 38px;
                         background: Theme.bg-primary;
@@ -84,53 +88,111 @@ export component SyncView inherits Rectangle {
                     }
                 }
 
-                VerticalLayout {
-                    spacing: 4px;
-                    Text { text: "Token Akses Kasir / Kunci Pairing:"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
-                    Rectangle {
-                        height: 38px;
-                        background: Theme.bg-primary;
-                        border-color: Theme.border;
-                        border-width: 1px;
-                        border-radius: 6px;
+                // 2. Status Otorisasi Terminal (Zero-Config Card)
+                Rectangle {
+                    background: root.is-authenticated ? #f0fdf4 : #fffbeb;
+                    border-color: root.is-authenticated ? #bbf7d0 : #fde68a;
+                    border-width: 1px;
+                    border-radius: 8px;
+
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 4px;
+
                         HorizontalLayout {
-                            padding-left: 12px;
-                            padding-right: 12px;
-                            TextInput {
-                                text <=> root.api-token;
-                                font-size: 13px;
-                                vertical-alignment: center;
+                            alignment: space-between;
+                            HorizontalLayout {
+                                spacing: 6px;
+                                Text {
+                                    text: root.is-authenticated ? "✓ Terminal Terotorisasi Otomatis" : "⚠ Menunggu Otorisasi Masuk";
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    color: root.is-authenticated ? Theme.emerald : Theme.amber;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            Rectangle {
+                                height: 20px;
+                                border-radius: 10px;
+                                background: root.is-authenticated ? #dcfce7 : #fef3c7;
+                                HorizontalLayout {
+                                    padding-left: 8px;
+                                    padding-right: 8px;
+                                    Text {
+                                        text: "Zero-Config";
+                                        font-size: 10px;
+                                        font-weight: 700;
+                                        color: root.is-authenticated ? Theme.emerald : Theme.amber;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: root.is-authenticated ? ("Kasir: " + root.user-name + " (" + root.user-role + ") • Kunci token dikelola otomatis oleh server.") : "Kunci otorisasi terminal dikelola secara otomatis oleh peladen pusat saat kasir masuk melalui SSO atau kode otorisasi 6-digit.";
+                            font-size: 11px;
+                            color: Theme.text-muted;
+                        }
+                    }
+                }
+
+                // 3. Failover & Layanan Latar Belakang (System Tray & Autostart)
+                Rectangle {
+                    background: Theme.bg-secondary;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: 8px;
+
+                    HorizontalLayout {
+                        padding: 12px;
+                        alignment: space-between;
+
+                        VerticalLayout {
+                            spacing: 2px;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: "Jalankan Otomatis saat Komputer Menyala (Autostart)";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: Theme.text-main;
+                            }
+                            Text {
+                                text: "Aplikasi berjalan di System Tray dan otomatis sinkronisasi di latar belakang sebagai failover saat server/internet pulih.";
+                                font-size: 11px;
+                                color: Theme.text-muted;
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 90px;
+                                height: 32px;
+                                background: root.autostart-enabled ? Theme.emerald : #e2e8f0;
+                                border-radius: 6px;
+                                animate background { duration: 150ms; }
+                                touch-auto := TouchArea {
+                                    clicked => { root.toggle-autostart-clicked(); }
+                                    mouse-cursor: pointer;
+                                }
+                                Text {
+                                    text: root.autostart-enabled ? "✓ Aktif" : "Nonaktif";
+                                    color: root.autostart-enabled ? white : Theme.text-muted;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
                             }
                         }
                     }
                 }
 
+                // 4. Tombol Aksi Simpan & Uji
                 HorizontalLayout {
                     spacing: 10px;
                     alignment: start;
-
-                    Rectangle {
-                        width: 120px;
-                        height: 36px;
-                        background: root.is-testing ? #e2e8f0 : touch-test.has-hover ? #e2e8f0 : #ffffff;
-                        border-color: Theme.border;
-                        border-width: 1px;
-                        border-radius: 6px;
-                        animate background { duration: 150ms; }
-                        touch-test := TouchArea {
-                            enabled: !root.is-testing;
-                            clicked => { root.test-connection-clicked(root.base-url, root.api-token); }
-                            mouse-cursor: pointer;
-                        }
-                        Text {
-                            text: root.is-testing ? "Menguji..." : "Uji Koneksi";
-                            color: Theme.text-main;
-                            font-size: 12px;
-                            font-weight: 700;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-                    }
 
                     Rectangle {
                         width: 150px;
@@ -139,12 +201,35 @@ export component SyncView inherits Rectangle {
                         border-radius: 6px;
                         animate background { duration: 150ms; }
                         touch-save := TouchArea {
-                            clicked => { root.save-settings-clicked(root.base-url, root.api-token); }
+                            clicked => { root.save-settings-clicked(root.base-url); }
                             mouse-cursor: pointer;
                         }
                         Text {
-                            text: "Simpan Pengaturan";
+                            text: "Simpan Sambungan";
                             color: white;
+                            font-size: 12px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Rectangle {
+                        width: 130px;
+                        height: 36px;
+                        background: root.is-testing ? #e2e8f0 : touch-test.has-hover ? #e2e8f0 : #ffffff;
+                        border-color: Theme.border;
+                        border-width: 1px;
+                        border-radius: 6px;
+                        animate background { duration: 150ms; }
+                        touch-test := TouchArea {
+                            enabled: !root.is-testing;
+                            clicked => { root.test-connection-clicked(root.base-url); }
+                            mouse-cursor: pointer;
+                        }
+                        Text {
+                            text: root.is-testing ? "Menguji..." : "🔗 Uji Sambungan";
+                            color: Theme.text-main;
                             font-size: 12px;
                             font-weight: 700;
                             horizontal-alignment: center;
@@ -163,7 +248,7 @@ export component SyncView inherits Rectangle {
             }
         }
 
-        // Status Antrean Failover
+        // Status Antrean Failover & Sinkronisasi
         Rectangle {
             vertical-stretch: 1;
             background: Theme.bg-card;
@@ -250,7 +335,7 @@ export component SyncView inherits Rectangle {
                             image-fit: contain;
                         }
                         Text {
-                            text: root.is-syncing ? "Sinkronisasi..." : "Sinkronkan Sekarang";
+                            text: root.is-syncing ? "Sinkronisasi..." : "Sinkronisasikan Sekarang";
                             color: white;
                             font-size: 12px;
                             font-weight: 700;

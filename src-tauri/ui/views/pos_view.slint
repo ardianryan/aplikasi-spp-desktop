@@ -30,6 +30,11 @@ export struct AssignmentData {
     is_selected: bool,
     is_group_header: bool,
     group_header_title: string,
+    is_active_year: bool,
+    is_collapsed: bool,
+    is_hidden: bool,
+    total_bills_in_year: int,
+    total_remaining_in_year: string,
 }
 
 export struct CartItemData {
@@ -142,6 +147,7 @@ export component PosView inherits Rectangle {
     callback process-payment-clicked();
     callback print-receipt-clicked(string);
     callback clear-selected-student();
+    callback toggle-year-collapse(string);
 
     VerticalLayout {
         padding: 16px;
@@ -435,37 +441,93 @@ export component PosView inherits Rectangle {
                                 alignment: start;
                                 spacing: 4px;
                                 for item in root.assignments: Rectangle {
-                                    height: item.is_group_header ? 32px : 40px;
-                                    background: item.is_group_header ? #e2e8f0 : item.is_selected ? #eff6ff : touch-item.has-hover ? #f8fafc : transparent;
-                                    border-color: item.is_group_header ? transparent : item.is_selected ? Theme.primary : Theme.border-muted;
-                                    border-width: item.is_group_header ? 0px : 1px;
+                                    visible: !item.is_hidden;
+                                    height: item.is_hidden ? 0px : item.is_group_header ? 38px : 40px;
+                                    background: item.is_group_header ? (touch-row.has-hover ? #dbeafe : item.is_active_year ? #eff6ff : #f8fafc) : item.is_selected ? #eff6ff : touch-row.has-hover ? #f8fafc : transparent;
+                                    border-color: item.is_group_header ? (item.is_active_year ? #bfdbfe : #e2e8f0) : item.is_selected ? Theme.primary : Theme.border-muted;
+                                    border-width: 1px;
                                     border-radius: 6px;
+                                    animate background { duration: 150ms; }
 
-                                    if item.is_group_header: HorizontalLayout {
-                                        padding-left: 12px;
-                                        padding-right: 12px;
-                                        spacing: 8px;
-                                        VerticalLayout {
-                                            alignment: center;
-                                            width: 14px;
-                                            Image {
-                                                source: @image-url("../assets/icons/bill.svg");
-                                                width: 13px;
-                                                height: 13px;
-                                                image-fit: contain;
-                                                colorize: Theme.primary;
+                                    touch-row := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => {
+                                            if item.is_group_header {
+                                                root.toggle-year-collapse(item.academic_year_name);
+                                            } else if item.remaining_raw > 0 {
+                                                root.toggle-assignment-selection(item.id);
                                             }
-                                        }
-                                        Text {
-                                            text: item.group_header_title;
-                                            font-size: 12px;
-                                            font-weight: 800;
-                                            color: Theme.primary;
-                                            vertical-alignment: center;
                                         }
                                     }
 
-                                    if !item.is_group_header: HorizontalLayout {
+                                    if item.is_group_header && !item.is_hidden: HorizontalLayout {
+                                        padding-left: 12px;
+                                        padding-right: 12px;
+                                        alignment: space-between;
+
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            VerticalLayout {
+                                                alignment: center;
+                                                width: 16px;
+                                                Image {
+                                                    source: @image-url("../assets/icons/bill.svg");
+                                                    width: 14px;
+                                                    height: 14px;
+                                                    image-fit: contain;
+                                                    colorize: item.is_active_year ? Theme.primary : Theme.text-muted;
+                                                }
+                                            }
+                                            Text {
+                                                text: item.group_header_title;
+                                                font-size: 12px;
+                                                font-weight: 800;
+                                                color: item.is_active_year ? Theme.primary : Theme.text-main;
+                                                vertical-alignment: center;
+                                            }
+                                            if item.is_active_year: Rectangle {
+                                                height: 20px;
+                                                border-radius: 10px;
+                                                background: #dbeafe;
+                                                HorizontalLayout {
+                                                    padding-left: 8px;
+                                                    padding-right: 8px;
+                                                    Text {
+                                                        text: "Aktif";
+                                                        font-size: 10px;
+                                                        font-weight: 700;
+                                                        color: Theme.primary;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        HorizontalLayout {
+                                            spacing: 12px;
+                                            if item.total_remaining_in_year != "": Text {
+                                                text: item.total_remaining_in_year;
+                                                font-size: 11px;
+                                                font-weight: 600;
+                                                color: Theme.text-muted;
+                                                vertical-alignment: center;
+                                            }
+                                            VerticalLayout {
+                                                alignment: center;
+                                                width: 18px;
+                                                Text {
+                                                    text: item.is_collapsed ? "▶" : "▼";
+                                                    font-size: 11px;
+                                                    font-weight: 700;
+                                                    color: Theme.text-muted;
+                                                    horizontal-alignment: center;
+                                                    vertical-alignment: center;
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if !item.is_group_header && !item.is_hidden: HorizontalLayout {
                                         padding-left: 12px;
                                         padding-right: 12px;
                                         spacing: 8px;
@@ -537,12 +599,6 @@ export component PosView inherits Rectangle {
                                                 }
                                             }
                                         }
-                                    }
-
-                                    touch-item := TouchArea {
-                                        enabled: !item.is_group_header && item.remaining_raw > 0;
-                                        clicked => { root.toggle-assignment-selection(item.id); }
-                                        mouse-cursor: pointer;
                                     }
                                 }
                             }
@@ -886,7 +942,7 @@ export component PosView inherits Rectangle {
 
         // 3. Riwayat Transaksi Kasir Hari Ini
         Rectangle {
-            height: 140px;
+            height: 220px;
             background: Theme.bg-card;
             border-color: Theme.border;
             border-width: 1px;
@@ -934,7 +990,7 @@ export component PosView inherits Rectangle {
                         Text { width: 80px; text: "Metode"; font-size: 10px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
                         Text { width: 110px; text: "Total"; font-size: 10px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
                         Text { width: 70px; text: "Waktu"; font-size: 10px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
-                        Text { width: 24px; text: "Aksi"; font-size: 10px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: center; vertical-alignment: center; }
+                        Text { width: 50px; text: "Aksi"; font-size: 10px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: center; vertical-alignment: center; }
                     }
                 }
 
@@ -953,6 +1009,7 @@ export component PosView inherits Rectangle {
 
                 if root.today-payments.length > 0: Flickable {
                     vertical-stretch: 1;
+                    content-height: root.today-payments.length * 36px;
                     VerticalLayout {
                         alignment: start;
                         spacing: 4px;
@@ -1012,21 +1069,30 @@ export component PosView inherits Rectangle {
 
                                 VerticalLayout {
                                     alignment: center;
-                                    width: 24px;
+                                    width: 50px;
                                     Rectangle {
-                                        width: 24px;
-                                        height: 22px;
+                                        width: 48px;
+                                        height: 24px;
                                         background: touch-today-p.has-hover ? #dbeafe : Theme.primary-light;
                                         border-radius: 4px;
                                         animate background { duration: 150ms; }
-                                        Image {
-                                            x: (parent.width - self.width) / 2;
-                                            y: (parent.height - self.height) / 2;
-                                            source: @image-url("../assets/icons/print.svg");
-                                            width: 12px;
-                                            height: 12px;
-                                            image-fit: contain;
-                                            colorize: Theme.primary;
+                                        HorizontalLayout {
+                                            alignment: center;
+                                            spacing: 4px;
+                                            Image {
+                                                source: @image-url("../assets/icons/print.svg");
+                                                width: 11px;
+                                                height: 11px;
+                                                image-fit: contain;
+                                                colorize: Theme.primary;
+                                            }
+                                            Text {
+                                                text: "Cetak";
+                                                font-size: 10px;
+                                                font-weight: 600;
+                                                color: Theme.primary;
+                                                vertical-alignment: center;
+                                            }
                                         }
                                         touch-today-p := TouchArea {
                                             clicked => { root.print-receipt-clicked(tx.transaction_code); }
