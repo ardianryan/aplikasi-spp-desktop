@@ -169,3 +169,65 @@ fn test_e2e_full_pos_and_savings_flow() {
 
     println!("🎉 Seluruh Pengujian E2E Database & POS Workflow Berhasil 100%!");
 }
+
+#[test]
+fn test_e2e_auth_login_logout_flow() {
+    println!("=== 1. Membuka Database untuk Pengujian Siklus Autentikasi ===");
+    let conn = db::init_db_standalone().expect("Harus berhasil membuka database SQLCipher");
+
+    println!("=== 2. E2E: Konfigurasi & Verifikasi PIN Offline ===");
+    let test_pin = "852963";
+    partisipasi_sekolah_lib::commands::set_offline_pin_conn(&conn, test_pin)
+        .expect("Harus berhasil menyimpan PIN kasir offline");
+
+    let has_pin = partisipasi_sekolah_lib::commands::has_offline_pin_conn(&conn)
+        .expect("Harus berhasil memeriksa keberadaan PIN offline");
+    assert!(has_pin, "has_offline_pin harus bernilai true setelah PIN disetel");
+
+    // a. Coba PIN yang salah
+    let wrong_result = partisipasi_sekolah_lib::commands::verify_offline_pin_conn(&conn, "000000")
+        .expect("Pengecekan PIN tidak boleh melempar error query");
+    assert!(wrong_result.is_none(), "PIN salah harus mengembalikan None");
+
+    // b. Coba PIN yang benar
+    let valid_result = partisipasi_sekolah_lib::commands::verify_offline_pin_conn(&conn, test_pin)
+        .expect("Pengecekan PIN harus berhasil");
+    assert!(valid_result.is_some(), "PIN benar harus mengembalikan sesi kasir");
+
+    let session = valid_result.unwrap();
+    println!("Sesi berhasil dibuat: nama='{}', role='{}', token='{}'", session.nama, session.role, session.token);
+    assert!(!session.token.is_empty(), "Token sesi tidak boleh kosong");
+
+    // c. Verifikasi Token tersimpan di tabel user_tokens
+    let stored_tokens_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM user_tokens WHERE token = ?1;",
+        [&session.token],
+        |r| r.get(0)
+    ).unwrap();
+    assert_eq!(stored_tokens_count, 1, "Token sesi harus ada tepat 1 di tabel user_tokens");
+
+    // d. Verifikasi Query Sesi Pengguna Aktif (dengan JOIN users)
+    let active_session: (String, Option<String>, Option<String>) = conn.query_row(
+        "SELECT ut.token, u.nama, u.role 
+         FROM user_tokens ut 
+         LEFT JOIN users u ON ut.user_id = u.id 
+         ORDER BY ut.created_at DESC 
+         LIMIT 1;",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    ).expect("Query active session harus berhasil tanpa error 'no such column'");
+    assert_eq!(active_session.0, session.token, "Token sesi aktif harus cocok");
+    println!("Sesi aktif di database terverifikasi: {:?}", active_session);
+
+    println!("=== 3. E2E: Uji Logout / Keluar Sesi ===");
+    partisipasi_sekolah_lib::commands::logout_conn(&conn)
+        .expect("Logout harus berhasil dieksekusi");
+
+    let count_after_logout: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM user_tokens;",
+        [],
+        |r| r.get(0)
+    ).unwrap();
+    assert_eq!(count_after_logout, 0, "Tabel user_tokens harus kosong setelah logout");
+    println!("✅ Logout berhasil: user_tokens dibersihkan sepenuhnya (count = 0).");
+}

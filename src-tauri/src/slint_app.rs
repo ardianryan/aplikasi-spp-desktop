@@ -43,6 +43,7 @@ pub struct SlintAppState {
     pub user_token: Option<String>,
     pub user_nama: String,
     pub user_role: String,
+    pub is_logged_in: bool,
 }
 
 pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
@@ -71,7 +72,23 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
         user_token: None,
         user_nama: "Kasir Loket 1".to_string(),
         user_role: "Petugas Kasir".to_string(),
+        is_logged_in: false,
     }));
+
+    // Cek Konfigurasi Server & PIN Offline
+    {
+        if let Ok(conn) = conn_arc.lock() {
+            let api_url: String = conn.query_row("SELECT value FROM settings WHERE key = 'api_url';", [], |r| r.get(0))
+                .unwrap_or_else(|_| "https://sekolah.id".to_string());
+            app.set_api_endpoint_url(api_url.into());
+
+            let has_pin = crate::commands::has_offline_pin_conn(&conn).unwrap_or(false);
+            if !has_pin {
+                let _ = crate::commands::set_offline_pin_conn(&conn, "123456");
+            }
+            app.set_has_offline_pin(true);
+        }
+    }
 
     // Cek Tahun Ajaran Aktif dari DB
     {
@@ -87,21 +104,36 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
-            // Cek Sesi Pengguna
-            if let Ok(mut stmt) = conn.prepare("SELECT token, nama, role FROM user_tokens LIMIT 1;") {
-                if let Ok(mut rows) = stmt.query([]) {
-                    if let Ok(Some(row)) = rows.next() {
-                        let tok: String = row.get(0).unwrap_or_default();
-                        let nama: String = row.get(1).unwrap_or_else(|_| "Kasir Loket 1".into());
-                        let role: String = row.get(2).unwrap_or_else(|_| "Petugas Kasir".into());
-                        state.lock().unwrap().user_token = Some(tok);
-                        state.lock().unwrap().user_nama = nama.clone();
-                        state.lock().unwrap().user_role = role.clone();
-                        app.set_user_name(nama.into());
-                        app.set_user_role(role.into());
+            // Cek Sesi Pengguna Aktif dari Database
+            let (has_session, user_name, user_role) = {
+                let res = conn.query_row(
+                    "SELECT ut.token, u.nama, u.role 
+                     FROM user_tokens ut 
+                     LEFT JOIN users u ON ut.user_id = u.id 
+                     ORDER BY ut.created_at DESC 
+                     LIMIT 1;",
+                    [],
+                    |row| Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?.unwrap_or_else(|| "Kasir Loket 1".to_string()),
+                        row.get::<_, Option<String>>(2)?.unwrap_or_else(|| "Petugas Kasir".to_string()),
+                    ))
+                );
+                match res {
+                    Ok((tok, nama, role)) => {
+                        let mut st = state.lock().unwrap();
+                        st.user_token = Some(tok);
+                        st.user_nama = nama.clone();
+                        st.user_role = role.clone();
+                        st.is_logged_in = true;
+                        (true, nama, role)
                     }
+                    Err(_) => (false, "Kasir Loket 1".to_string(), "Petugas Kasir".to_string())
                 }
-            }
+            };
+            app.set_is_logged_in(has_session);
+            app.set_user_name(user_name.into());
+            app.set_user_role(user_role.into());
         }
     }
 
@@ -527,6 +559,193 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(app) = app_weak.upgrade() {
                 refresh_reports_tab_ui(&app, &conn_arc);
             }
+        });
+    }
+
+    // K. Auth Handlers (Logout, SSO Login, PIN Login, Code Login)
+    {
+        let conn_arc = Arc::clone(&conn_arc);
+        let state = Arc::clone(&state);
+        let app_weak = app_weak.clone();
+        app.on_logout(move || {
+            if let Ok(conn) = conn_arc.lock() {
+                let _ = crate::commands::logout_conn(&conn);
+            }
+            {
+                let mut st = state.lock().unwrap();
+                st.user_token = None;
+                st.is_logged_in = false;
+                st.selected_student_id = None;
+                st.cart.clear();
+            }
+            if let Some(app) = app_weak.upgrade() {
+                app.set_is_logged_in(false);
+                app.set_login_error("".into());
+                app.set_search_query("".into());
+                app.set_current_student(StudentData {
+                    id: "".into(),
+                    nis: "-".into(),
+                    nisn: "-".into(),
+                    nama: "".into(),
+                    kelas: "-".into(),
+                    savings_balance: "Rp 0".into(),
+                });
+                app.set_assignments(Rc::new(VecModel::default()).into());
+                app.set_cart_items(Rc::new(VecModel::default()).into());
+                app.set_cart_total("Rp 0".into());
+            }
+            println!("[INFO] Kasir berhasil logout / keluar sesi.");
+        });
+    }
+
+    {
+        let conn_arc = Arc::clone(&conn_arc);
+        app.on_sso_login(move || {
+            let api_url: String = {
+                if let Ok(conn) = conn_arc.lock() {
+                    conn.query_row("SELECT value FROM settings WHERE key = 'api_url';", [], |r| r.get(0))
+                        .unwrap_or_else(|_| "https://sekolah.id".to_string())
+                } else {
+                    "https://sekolah.id".to_string()
+                }
+            };
+            let clean_url = api_url.trim_end_matches('/');
+            let login_url = format!("{}/auth/desktop-login", clean_url);
+            println!("[INFO] Membuka SSO peramban: {}", login_url);
+            #[cfg(target_os = "macos")]
+            let _ = std::process::Command::new("open").arg(&login_url).spawn();
+            #[cfg(target_os = "windows")]
+            let _ = std::process::Command::new("cmd").args(["/C", "start", &login_url]).spawn();
+            #[cfg(target_os = "linux")]
+            let _ = std::process::Command::new("xdg-open").arg(&login_url).spawn();
+        });
+    }
+
+    {
+        let conn_arc = Arc::clone(&conn_arc);
+        let state = Arc::clone(&state);
+        let app_weak = app_weak.clone();
+        app.on_pin_login(move |pin_slint| {
+            let pin_str = pin_slint.to_string();
+            let clean_pin = pin_str.trim();
+            if clean_pin.len() != 6 {
+                if let Some(app) = app_weak.upgrade() {
+                    app.set_login_error("PIN Kasir harus berupa 6 digit angka.".into());
+                }
+                return;
+            }
+
+            let result = {
+                if let Ok(conn) = conn_arc.lock() {
+                    crate::commands::verify_offline_pin_conn(&conn, clean_pin)
+                } else {
+                    Err("Gagal membuka database".into())
+                }
+            };
+
+            match result {
+                Ok(Some(sess)) => {
+                    {
+                        let mut st = state.lock().unwrap();
+                        st.user_token = Some(sess.token);
+                        st.user_nama = sess.nama.clone();
+                        st.user_role = sess.role.clone();
+                        st.is_logged_in = true;
+                    }
+                    if let Some(app) = app_weak.upgrade() {
+                        app.set_user_name(sess.nama.into());
+                        app.set_user_role(sess.role.into());
+                        app.set_login_error("".into());
+                        app.set_is_logged_in(true);
+                        refresh_today_payments_ui(&app, &conn_arc);
+                        refresh_sync_status_ui(&app, &conn_arc);
+                    }
+                    println!("[INFO] Kasir berhasil masuk menggunakan PIN offline.");
+                }
+                Ok(None) => {
+                    if let Some(app) = app_weak.upgrade() {
+                        app.set_login_error("PIN Kasir tidak cocok. Silakan coba lagi.".into());
+                    }
+                }
+                Err(e) => {
+                    if let Some(app) = app_weak.upgrade() {
+                        app.set_login_error(format!("Gagal masuk: {}", e).into());
+                    }
+                }
+            }
+        });
+    }
+
+    {
+        let conn_arc = Arc::clone(&conn_arc);
+        let state = Arc::clone(&state);
+        let app_weak = app_weak.clone();
+        app.on_code_login(move |code_slint| {
+            let code_str = code_slint.to_string();
+            let clean_code = code_str.trim().replace(" ", "").replace("-", "");
+            if clean_code.len() < 6 {
+                if let Some(app) = app_weak.upgrade() {
+                    app.set_login_error("Kode otorisasi harus terdiri atas 6 digit angka.".into());
+                }
+                return;
+            }
+
+            let conn_arc = Arc::clone(&conn_arc);
+            let state = Arc::clone(&state);
+            let app_weak = app_weak.clone();
+
+            std::thread::spawn(move || {
+                let runtime = match tokio::runtime::Runtime::new() {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        slint::invoke_from_event_loop(move || {
+                            if let Some(app) = app_weak.upgrade() {
+                                app.set_login_error(format!("Gagal runtime async: {}", e).into());
+                            }
+                        }).ok();
+                        return;
+                    }
+                };
+
+                let res = runtime.block_on(async {
+                    let (api_url, api_key) = {
+                        let conn = conn_arc.lock().map_err(|e| e.to_string())?;
+                        crate::sync::get_sync_settings(&conn)
+                    };
+                    if api_url.is_empty() {
+                        return Err("Alamat peladen web sekolah belum dikonfigurasi. Silakan periksa pengaturan sambungan.".to_string());
+                    }
+                    let exchange = crate::sync::exchange_code_with_server(&api_url, &api_key, &clean_code).await?;
+                    let conn = conn_arc.lock().map_err(|e| e.to_string())?;
+                    crate::commands::save_exchanged_session(&conn, exchange)
+                });
+
+                slint::invoke_from_event_loop(move || {
+                    if let Some(app) = app_weak.upgrade() {
+                        match res {
+                            Ok(sess) => {
+                                {
+                                    let mut st = state.lock().unwrap();
+                                    st.user_token = Some(sess.token);
+                                    st.user_nama = sess.nama.clone();
+                                    st.user_role = sess.role.clone();
+                                    st.is_logged_in = true;
+                                }
+                                app.set_user_name(sess.nama.into());
+                                app.set_user_role(sess.role.into());
+                                app.set_login_error("".into());
+                                app.set_is_logged_in(true);
+                                refresh_today_payments_ui(&app, &conn_arc);
+                                refresh_sync_status_ui(&app, &conn_arc);
+                                println!("[INFO] Kasir berhasil masuk dengan kode otorisasi.");
+                            }
+                            Err(e) => {
+                                app.set_login_error(format!("Gagal masuk dengan kode: {}", e).into());
+                            }
+                        }
+                    }
+                }).ok();
+            });
         });
     }
 

@@ -1,6 +1,7 @@
 import { Theme } from "theme.slint";
 import { Sidebar } from "components/sidebar.slint";
 import { Header } from "components/header.slint";
+import { LoginView } from "views/login_view.slint";
 import { PosView, StudentData, BillSummaryData, AssignmentData, CartItemData, TodayPaymentData } from "views/pos_view.slint";
 import { SavingsView, SavingsHistoryData } from "views/savings_view.slint";
 import { HistoryView, HistoryRecord } from "views/history_view.slint";
@@ -24,6 +25,10 @@ export component AppWindow inherits Window {
     background: Theme.bg-primary;
 
     // Navigation & Auth State
+    in-out property <bool> is-logged-in: false;
+    in-out property <string> login-error: "";
+    in property <bool> has-offline-pin: true;
+    in property <string> api-endpoint-url: "https://sekolah.id";
     in-out property <int> active-tab: 0;
     in property <string> user-name: "Kasir Loket 1";
     in property <string> user-role: "Petugas Kasir";
@@ -104,9 +109,23 @@ export component AppWindow inherits Window {
     callback print-receipt(string);
     callback test-sync-connection(string, string);
     callback save-sync-settings(string, string);
+    callback sso-login();
+    callback code-login(string);
+    callback pin-login(string);
     callback logout();
 
-    HorizontalLayout {
+    // 0. Layar Masuk / Login View (Bila sesi kasir belum aktif)
+    if !root.is-logged-in: LoginView {
+        api-url: root.api-endpoint-url;
+        has-offline-pin: root.has-offline-pin;
+        error-message: root.login-error;
+        sso-login-clicked => { root.sso-login(); }
+        code-login-submitted(c) => { root.code-login(c); }
+        pin-login-submitted(p) => { root.pin-login(p); }
+    }
+
+    // 1. Terminal Kasir Utama (Bila kasir sudah masuk / terautentikasi)
+    if root.is-logged-in: HorizontalLayout {
         // 1. Sidebar Navigasi Kiri (260px)
         Sidebar {
             active-tab: root.active-tab;
