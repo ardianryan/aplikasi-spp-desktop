@@ -457,6 +457,8 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
         app.on_trigger_sync(move || {
             if let Some(app) = app_weak.upgrade() {
                 app.set_is_syncing(true);
+                app.set_sync_toast_message("Sedang menghubungkan ke server cloud...".into());
+                app.set_sync_toast_is_error(false);
                 app.set_sync_message("Sedang menghubungkan ke server cloud...".into());
 
                 let app_weak2 = app_weak.clone();
@@ -477,20 +479,38 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                         Err("Gagal membuat runtime async".into())
                     };
 
+                    let app_weak3 = app_weak2.clone();
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(app) = app_weak2.upgrade() {
                             app.set_is_syncing(false);
-                            match result_msg {
+                            match &result_msg {
                                 Ok(msg) => {
-                                    app.set_sync_message(msg.into());
+                                    app.set_sync_message(msg.clone().into());
+                                    app.set_sync_toast_message("Sinkronisasi Berhasil! Data lokal telah diperbarui.".into());
+                                    app.set_sync_toast_is_error(false);
                                     app.set_is_online(true);
+                                    println!("[INFO] Sinkronisasi Berhasil: {}", msg);
                                 }
                                 Err(err) => {
                                     app.set_sync_message(format!("Sync offline: {}", err).into());
+                                    app.set_sync_toast_message(format!("Gagal Sinkron: {}", err).into());
+                                    app.set_sync_toast_is_error(true);
                                     app.set_is_online(false);
+                                    println!("[WARN] Sinkronisasi Gagal: {}", err);
                                 }
                             }
                             refresh_sync_status_ui(&app, &conn_arc2);
+                            refresh_today_payments_ui(&app, &conn_arc2);
+
+                            // Auto-hide toast notification after 5 seconds
+                            std::thread::spawn(move || {
+                                std::thread::sleep(std::time::Duration::from_secs(5));
+                                let _ = slint::invoke_from_event_loop(move || {
+                                    if let Some(app) = app_weak3.upgrade() {
+                                        app.set_sync_toast_message("".into());
+                                    }
+                                });
+                            });
                         }
                     });
                 });

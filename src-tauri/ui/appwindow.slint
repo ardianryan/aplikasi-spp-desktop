@@ -91,6 +91,8 @@ export component AppWindow inherits Window {
     in property <string> sync-message: "";
     in property <bool> is-testing-connection: false;
     in property <string> test-connection-result: "";
+    in property <string> sync-toast-message: "";
+    in property <bool> sync-toast-is-error: false;
 
     // Callbacks to Rust Controller
     callback tab-changed(int);
@@ -229,6 +231,47 @@ export component AppWindow inherits Window {
                     test-connection-clicked(url, tok) => { root.test-sync-connection(url, tok); }
                     save-settings-clicked(url, tok) => { root.save-sync-settings(url, tok); }
                     trigger-sync-clicked => { root.trigger-sync(); }
+                }
+
+                // Toast Feedback Sinkronisasi Floating
+                if root.sync-toast-message != "": Rectangle {
+                    x: (parent.width - self.width) / 2;
+                    y: 10px;
+                    z: 90;
+                    height: 38px;
+                    border-radius: 19px;
+                    background: root.sync-toast-is-error ? #fef2f2 : #ecfdf5;
+                    border-color: root.sync-toast-is-error ? #fca5a5 : #a7f3d0;
+                    border-width: 1px;
+                    drop-shadow-blur: 16px;
+                    drop-shadow-color: #00000018;
+
+                    HorizontalLayout {
+                        padding-left: 18px;
+                        padding-right: 18px;
+                        spacing: 8px;
+                        alignment: center;
+
+                        VerticalLayout {
+                            alignment: center;
+                            width: 16px;
+                            Image {
+                                source: root.sync-toast-is-error ? @image-url("assets/icons/lock.svg") : @image-url("assets/icons/sync.svg");
+                                width: 14px;
+                                height: 14px;
+                                image-fit: contain;
+                                colorize: root.sync-toast-is-error ? #dc2626 : #059669;
+                            }
+                        }
+
+                        Text {
+                            text: root.sync-toast-message;
+                            font-size: 12px;
+                            font-weight: 700;
+                            color: root.sync-toast-is-error ? #b91c1c : #047857;
+                            vertical-alignment: center;
+                        }
+                    }
                 }
 
                 // Search Results Dropdown Popup (bila ada hasil search)
