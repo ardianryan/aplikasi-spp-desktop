@@ -44,7 +44,6 @@ export struct TodayPaymentData {
     created_at: string,
 }
 
-// 4 Kartu Ringkasan (Professional Modern FinTech Card - No Emoji)
 component SummaryCard inherits Rectangle {
     in property <string> title: "";
     in property <string> amount: "Rp 0";
@@ -56,12 +55,12 @@ component SummaryCard inherits Rectangle {
     border-color: Theme.border;
     border-width: 1px;
     border-radius: 8px;
-    height: 76px;
+    height: 72px;
 
     HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 14px;
-        spacing: 12px;
+        padding-left: 16px;
+        padding-right: 16px;
+        spacing: 14px;
         alignment: start;
 
         Rectangle {
@@ -69,7 +68,7 @@ component SummaryCard inherits Rectangle {
             height: 38px;
             background: root.card-light-color;
             border-radius: 8px;
-            y: 18px;
+            y: 17px;
             HorizontalLayout {
                 alignment: center;
                 Image {
@@ -93,7 +92,7 @@ component SummaryCard inherits Rectangle {
             }
             Text {
                 text: root.amount;
-                font-size: 17px;
+                font-size: 18px;
                 color: root.card-color;
                 font-weight: 800;
             }
@@ -104,11 +103,15 @@ component SummaryCard inherits Rectangle {
 export component PosView inherits Rectangle {
     background: Theme.bg-primary;
 
+    in property <string> today-cashier-total: "Rp 0";
+    in property <string> monthly-cashier-total: "Rp 0";
+    in property <string> today-cashier-count: "0 Transaksi";
+
     in property <StudentData> current-student: {
         id: "",
         nis: "-",
         nisn: "-",
-        nama: "Pilih / Cari Siswa Di Atas",
+        nama: "",
         kelas: "-",
         savings_balance: "Rp 0"
     };
@@ -132,331 +135,491 @@ export component PosView inherits Rectangle {
     callback select-payment-method(int);
     callback process-payment-clicked();
     callback print-receipt-clicked(string);
+    callback clear-selected-student();
 
     VerticalLayout {
         padding: 16px;
         spacing: 14px;
 
-        // 1. Info Bar Siswa Terpilih (Clean Corporate Style)
-        Rectangle {
-            height: 60px;
-            background: Theme.bg-card;
-            border-color: Theme.border;
-            border-width: 1px;
-            border-radius: 8px;
-
-            HorizontalLayout {
-                padding-left: 16px;
-                padding-right: 16px;
-                alignment: space-between;
-
-                HorizontalLayout {
-                    spacing: 14px;
-                    alignment: start;
-                    Rectangle {
-                        width: 36px;
-                        height: 36px;
-                        background: Theme.primary-light;
-                        border-radius: 18px;
-                        y: 12px;
-                        HorizontalLayout {
-                            alignment: center;
-                            Image {
-                                source: @image-url("../assets/icons/student.svg");
-                                width: 18px;
-                                height: 18px;
-                                image-fit: contain;
-                                colorize: Theme.primary;
-                            }
-                        }
-                    }
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: 2px;
-                        Text {
-                            text: root.current-student.nama;
-                            font-size: 15px;
-                            font-weight: 700;
-                            color: Theme.text-main;
-                        }
-                        HorizontalLayout {
-                            spacing: 12px;
-                            Text {
-                                text: "NIS: " + root.current-student.nis;
-                                font-size: 12px;
-                                color: Theme.text-muted;
-                            }
-                            Text {
-                                text: "Kelas: " + root.current-student.kelas;
-                                font-size: 12px;
-                                font-weight: 600;
-                                color: Theme.primary;
-                            }
-                        }
-                    }
-                }
-
-                // Saldo Tabungan Badge (No Emoji)
-                Rectangle {
-                    height: 34px;
-                    background: Theme.emerald-light;
-                    border-color: #a7f3d0;
-                    border-width: 1px;
-                    border-radius: 6px;
-                    y: 13px;
-                    HorizontalLayout {
-                        padding-left: 12px;
-                        padding-right: 12px;
-                        spacing: 8px;
-                        alignment: center;
-
-                        Image {
-                            source: @image-url("../assets/icons/savings.svg");
-                            width: 14px;
-                            height: 14px;
-                            image-fit: contain;
-                            colorize: Theme.emerald;
-                        }
-
-                        Text {
-                            text: "Tabungan:";
-                            font-size: 11px;
-                            color: Theme.emerald-hover;
-                            font-weight: 600;
-                            vertical-alignment: center;
-                        }
-                        Text {
-                            text: root.current-student.savings_balance;
-                            font-size: 13px;
-                            font-weight: 800;
-                            color: Theme.emerald;
-                            vertical-alignment: center;
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. 4 Summary Cards Grid (No Emoji)
+        // 1. Top Kasir Metrics (Paritas React App.tsx)
         HorizontalLayout {
-            spacing: 12px;
+            spacing: 14px;
+            height: 74px;
+
             SummaryCard {
-                title: "Total Tagihan Siswa";
-                amount: root.summary.total_tagihan;
-                card-color: Theme.primary;
-                card-light-color: Theme.primary-light;
-                icon-src: @image-url("../assets/icons/bill.svg");
+                title: "Pemasukan Hari Ini";
+                amount: root.today-cashier-total;
+                card-color: #002b59; // Deep Navy
+                card-light-color: #e0f2fe;
+                icon-src: @image-url("../assets/icons/cash.svg");
                 horizontal-stretch: 1;
             }
+
             SummaryCard {
-                title: "Sudah Dibayar";
-                amount: root.summary.total_dibayar;
-                card-color: Theme.emerald;
-                card-light-color: Theme.emerald-light;
-                icon-src: @image-url("../assets/icons/check.svg");
-                horizontal-stretch: 1;
-            }
-            SummaryCard {
-                title: "Keringanan (Relief)";
-                amount: root.summary.total_keringanan;
-                card-color: Theme.amber;
-                card-light-color: Theme.amber-light;
+                title: "Pemasukan Bulan Ini";
+                amount: root.monthly-cashier-total;
+                card-color: #008f5d; // Emerald
+                card-light-color: #dcfce7;
                 icon-src: @image-url("../assets/icons/bank.svg");
                 horizontal-stretch: 1;
             }
+
             SummaryCard {
-                title: "Tunggakan / Sisa";
-                amount: root.summary.total_tunggakan;
-                card-color: Theme.rose;
-                card-light-color: Theme.rose-light;
+                title: "Transaksi Hari Ini";
+                amount: root.today-cashier-count;
+                card-color: #d97706; // Amber
+                card-light-color: #fef3c7;
                 icon-src: @image-url("../assets/icons/bill.svg");
                 horizontal-stretch: 1;
             }
         }
 
-        // 3. Main Center Split: Tabel Tagihan (Kiri) & Keranjang Bayar (Kanan)
+        // 2. Main Center Split
         HorizontalLayout {
             spacing: 14px;
             vertical-stretch: 1;
 
-            // Kiri: Tabel Tagihan Siswa
-            Rectangle {
+            // KIRI: Welcome Banner ATAU Daftar Tagihan Siswa
+            if root.current-student.id == "": Rectangle {
                 horizontal-stretch: 1;
-                background: Theme.bg-card;
-                border-color: Theme.border;
-                border-width: 1px;
-                border-radius: 8px;
+                background: @linear-gradient(135deg, #002b59 0%, #1a4175 100%);
+                border-radius: 12px;
 
                 VerticalLayout {
-                    padding: 16px;
-                    spacing: 10px;
+                    alignment: center;
+                    spacing: 12px;
+                    padding: 40px;
 
-                    // Header Text
                     HorizontalLayout {
-                        height: 24px;
-                        alignment: space-between;
-                        Text {
-                            text: "Daftar Tagihan & Pos Biaya";
-                            font-size: 14px;
-                            font-weight: 700;
-                            color: Theme.text-main;
-                            vertical-alignment: center;
-                        }
-                        Text {
-                            text: "Centang pos yang ingin dibayarkan kasir";
-                            font-size: 11px;
-                            color: Theme.text-muted;
-                            vertical-alignment: center;
-                        }
-                    }
-
-                    // Columns Header (Tetap di ATAS tabel)
-                    Rectangle {
-                        height: 36px;
-                        background: Theme.bg-secondary;
-                        border-radius: 6px;
-                        HorizontalLayout {
-                            padding-left: 14px;
-                            padding-right: 14px;
-                            spacing: 8px;
-                            alignment: center;
-                            Text { width: 36px; text: "Pilih"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
-                            Text { horizontal-stretch: 1; text: "Nama Pos / Periode Bulan"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
-                            Text { width: 110px; text: "Jumlah"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
-                            Text { width: 110px; text: "Sisa Bayar"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
-                            Text { width: 90px; text: "Status"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: center; }
-                        }
-                    }
-
-                    // Content Rows / Empty State
-                    if root.assignments.length == 0: Rectangle {
-                        vertical-stretch: 1;
-                        VerticalLayout {
-                            alignment: center;
-                            spacing: 8px;
+                        alignment: center;
+                        Rectangle {
+                            width: 56px;
+                            height: 56px;
+                            background: rgba(255, 255, 255, 0.15);
+                            border-radius: 28px;
                             HorizontalLayout {
                                 alignment: center;
                                 Image {
-                                    source: @image-url("../assets/icons/bill.svg");
-                                    width: 32px;
-                                    height: 32px;
-                                    colorize: #cbd5e1;
+                                    source: @image-url("../assets/icons/search.svg");
+                                    width: 28px;
+                                    height: 28px;
+                                    image-fit: contain;
+                                    colorize: white;
                                 }
-                            }
-                            Text {
-                                text: "Belum ada tagihan dimuat. Silakan cari dan pilih siswa di kolom pencarian atas.";
-                                font-size: 12px;
-                                color: Theme.text-muted;
-                                horizontal-alignment: center;
                             }
                         }
                     }
 
-                    if root.assignments.length > 0: Flickable {
-                        vertical-stretch: 1;
-                        VerticalLayout {
-                            spacing: 6px;
-                            for item in root.assignments: Rectangle {
-                                height: 42px;
-                                background: item.is_selected ? #eff6ff : touch-item.has-hover ? #f8fafc : transparent;
-                                border-color: item.is_selected ? Theme.primary : Theme.border-muted;
-                                border-width: 1px;
-                                border-radius: 6px;
+                    Text {
+                        text: "Cari Data Siswa";
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: white;
+                        horizontal-alignment: center;
+                    }
 
+                    Text {
+                        text: "Ketik nama, NIS, atau kelas pada kotak pencarian di bagian atas untuk memulai transaksi pembayaran kasir.";
+                        font-size: 13px;
+                        color: rgba(255, 255, 255, 0.85);
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+
+            if root.current-student.id != "": VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 10px;
+
+                // Profile Bar Siswa Aktif
+                Rectangle {
+                    height: 56px;
+                    background: Theme.bg-card;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: 8px;
+
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        alignment: space-between;
+
+                        HorizontalLayout {
+                            spacing: 12px;
+                            alignment: start;
+                            Rectangle {
+                                width: 34px;
+                                height: 34px;
+                                background: Theme.primary-light;
+                                border-radius: 17px;
+                                y: 11px;
                                 HorizontalLayout {
-                                    padding-left: 14px;
-                                    padding-right: 14px;
-                                    spacing: 8px;
                                     alignment: center;
-
-                                    // Checkbox Kotak
-                                    Rectangle {
-                                        width: 18px;
-                                        height: 18px;
-                                        background: item.is_selected ? Theme.primary : white;
-                                        border-color: item.is_selected ? Theme.primary : Theme.border;
-                                        border-width: 1px;
-                                        border-radius: 4px;
-                                        if item.is_selected: Image {
-                                            source: @image-url("../assets/icons/check.svg");
-                                            width: 12px;
-                                            height: 12px;
-                                            image-fit: contain;
-                                        }
-                                    }
-
-                                    // Nama Pos
-                                    Text {
-                                        horizontal-stretch: 1;
-                                        text: item.payment_type_name + (item.month_name != "" ? " (" + item.month_name + ")" : "");
-                                        font-size: 12px;
-                                        font-weight: 600;
-                                        color: Theme.text-main;
-                                        vertical-alignment: center;
-                                    }
-
-                                    Text {
-                                        width: 110px;
-                                        text: item.amount;
-                                        font-size: 12px;
-                                        color: Theme.text-muted;
-                                        horizontal-alignment: right;
-                                        vertical-alignment: center;
-                                    }
-
-                                    Text {
-                                        width: 110px;
-                                        text: item.remaining_amount;
-                                        font-size: 12px;
-                                        font-weight: 700;
-                                        color: item.remaining_raw > 0 ? Theme.rose : Theme.emerald;
-                                        horizontal-alignment: right;
-                                        vertical-alignment: center;
-                                    }
-
-                                    // Badge status
-                                    Rectangle {
-                                        width: 90px;
-                                        height: 22px;
-                                        border-radius: 11px;
-                                        background: item.status == "lunas" ? Theme.emerald-light : item.status == "sebagian" ? Theme.amber-light : Theme.rose-light;
-                                        Text {
-                                            text: item.status == "lunas" ? "LUNAS" : item.status == "sebagian" ? "CICILAN" : "BELUM";
-                                            font-size: 10px;
-                                            font-weight: 700;
-                                            color: item.status == "lunas" ? Theme.emerald : item.status == "sebagian" ? Theme.amber : Theme.rose;
-                                            horizontal-alignment: center;
-                                            vertical-alignment: center;
-                                        }
+                                    Image {
+                                        source: @image-url("../assets/icons/student.svg");
+                                        width: 16px;
+                                        height: 16px;
+                                        image-fit: contain;
+                                        colorize: Theme.primary;
                                     }
                                 }
+                            }
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 1px;
+                                Text {
+                                    text: root.current-student.nama;
+                                    font-size: 14px;
+                                    font-weight: 700;
+                                    color: Theme.text-main;
+                                }
+                                Text {
+                                    text: "NIS: " + root.current-student.nis + " | Kelas: " + root.current-student.kelas;
+                                    font-size: 11px;
+                                    color: Theme.text-muted;
+                                }
+                            }
+                        }
 
-                                touch-item := TouchArea {
-                                    enabled: item.remaining_raw > 0;
-                                    clicked => { root.toggle-assignment-selection(item.id); }
+                        HorizontalLayout {
+                            spacing: 10px;
+                            alignment: end;
+
+                            // Badge Saldo Tabungan
+                            Rectangle {
+                                height: 32px;
+                                background: Theme.emerald-light;
+                                border-color: #a7f3d0;
+                                border-width: 1px;
+                                border-radius: 6px;
+                                y: 12px;
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    spacing: 6px;
+                                    alignment: center;
+
+                                    Image {
+                                        source: @image-url("../assets/icons/savings.svg");
+                                        width: 14px;
+                                        height: 14px;
+                                        image-fit: contain;
+                                        colorize: Theme.emerald;
+                                    }
+
+                                    Text {
+                                        text: "Tabungan: " + root.current-student.savings_balance;
+                                        font-size: 12px;
+                                        font-weight: 700;
+                                        color: Theme.emerald;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            // Tombol Ganti Siswa
+                            Rectangle {
+                                height: 32px;
+                                background: #f1f5f9;
+                                border-color: #cbd5e1;
+                                border-width: 1px;
+                                border-radius: 6px;
+                                y: 12px;
+                                HorizontalLayout {
+                                    padding-left: 10px;
+                                    padding-right: 10px;
+                                    spacing: 4px;
+                                    alignment: center;
+                                    Image {
+                                        source: @image-url("../assets/icons/close.svg");
+                                        width: 10px;
+                                        height: 10px;
+                                        image-fit: contain;
+                                    }
+                                    Text {
+                                        text: "Ganti Siswa";
+                                        font-size: 11px;
+                                        font-weight: 600;
+                                        color: Theme.text-muted;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                TouchArea {
+                                    clicked => { root.clear-selected-student(); }
                                     mouse-cursor: pointer;
                                 }
                             }
                         }
                     }
                 }
+
+                // Tabel Tagihan Siswa
+                Rectangle {
+                    vertical-stretch: 1;
+                    background: Theme.bg-card;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: 8px;
+
+                    VerticalLayout {
+                        padding: 14px;
+                        spacing: 10px;
+
+                        // Header Bar
+                        HorizontalLayout {
+                            height: 22px;
+                            alignment: space-between;
+                            Text {
+                                text: "Daftar Tagihan & Pos Biaya";
+                                font-size: 13px;
+                                font-weight: 700;
+                                color: Theme.text-main;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: "Centang pos yang ingin dibayarkan kasir";
+                                font-size: 11px;
+                                color: Theme.text-muted;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        // Table Columns Header
+                        Rectangle {
+                            height: 34px;
+                            background: Theme.bg-secondary;
+                            border-radius: 6px;
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                spacing: 8px;
+                                alignment: center;
+                                Text { width: 32px; text: "Pilih"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
+                                Text { horizontal-stretch: 1; text: "Nama Pos / Periode Bulan"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
+                                Text { width: 100px; text: "Jumlah"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
+                                Text { width: 100px; text: "Sisa Bayar"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
+                                Text { width: 80px; text: "Status"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: center; }
+                            }
+                        }
+
+                        // Table Rows
+                        if root.assignments.length == 0: Rectangle {
+                            vertical-stretch: 1;
+                            HorizontalLayout {
+                                alignment: center;
+                                Text {
+                                    text: "Tidak ada tagihan yang di-assign untuk siswa ini.";
+                                    font-size: 12px;
+                                    color: Theme.text-muted;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        if root.assignments.length > 0: Flickable {
+                            vertical-stretch: 1;
+                            VerticalLayout {
+                                spacing: 4px;
+                                for item in root.assignments: Rectangle {
+                                    height: 40px;
+                                    background: item.is_selected ? #eff6ff : touch-item.has-hover ? #f8fafc : transparent;
+                                    border-color: item.is_selected ? Theme.primary : Theme.border-muted;
+                                    border-width: 1px;
+                                    border-radius: 6px;
+
+                                    HorizontalLayout {
+                                        padding-left: 12px;
+                                        padding-right: 12px;
+                                        spacing: 8px;
+                                        alignment: center;
+
+                                        Rectangle {
+                                            width: 18px;
+                                            height: 18px;
+                                            background: item.is_selected ? Theme.primary : white;
+                                            border-color: item.is_selected ? Theme.primary : Theme.border;
+                                            border-width: 1px;
+                                            border-radius: 4px;
+                                            if item.is_selected: Image {
+                                                source: @image-url("../assets/icons/check.svg");
+                                                width: 12px;
+                                                height: 12px;
+                                                image-fit: contain;
+                                            }
+                                        }
+
+                                        Text {
+                                            horizontal-stretch: 1;
+                                            text: item.payment_type_name + (item.month_name != "" ? " (" + item.month_name + ")" : "");
+                                            font-size: 12px;
+                                            font-weight: 600;
+                                            color: Theme.text-main;
+                                            vertical-alignment: center;
+                                        }
+
+                                        Text {
+                                            width: 100px;
+                                            text: item.amount;
+                                            font-size: 12px;
+                                            color: Theme.text-muted;
+                                            horizontal-alignment: right;
+                                            vertical-alignment: center;
+                                        }
+
+                                        Text {
+                                            width: 100px;
+                                            text: item.remaining_amount;
+                                            font-size: 12px;
+                                            font-weight: 700;
+                                            color: item.remaining_raw > 0 ? Theme.rose : Theme.emerald;
+                                            horizontal-alignment: right;
+                                            vertical-alignment: center;
+                                        }
+
+                                        Rectangle {
+                                            width: 80px;
+                                            height: 20px;
+                                            border-radius: 10px;
+                                            background: item.status == "lunas" ? Theme.emerald-light : item.status == "sebagian" ? Theme.amber-light : Theme.rose-light;
+                                            Text {
+                                                text: item.status == "lunas" ? "LUNAS" : item.status == "sebagian" ? "CICILAN" : "BELUM";
+                                                font-size: 10px;
+                                                font-weight: 700;
+                                                color: item.status == "lunas" ? Theme.emerald : item.status == "sebagian" ? Theme.amber : Theme.rose;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+                                        }
+                                    }
+
+                                    touch-item := TouchArea {
+                                        enabled: item.remaining_raw > 0;
+                                        clicked => { root.toggle-assignment-selection(item.id); }
+                                        mouse-cursor: pointer;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
-            // Kanan: Panel Keranjang Pembayaran (Cart Panel - No Emoji)
-            Rectangle {
-                width: 350px;
+            // KANAN: Petunjuk Pintasan (Jika siswa belum dipilih) ATAU Keranjang Bayar
+            if root.current-student.id == "": Rectangle {
+                width: 340px;
                 background: Theme.bg-card;
                 border-color: Theme.border;
                 border-width: 1px;
                 border-radius: 8px;
 
                 VerticalLayout {
-                    padding: 16px;
+                    padding: 20px;
+                    spacing: 14px;
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+                        Image {
+                            source: @image-url("../assets/icons/monitor.svg");
+                            width: 18px;
+                            height: 18px;
+                            image-fit: contain;
+                            colorize: Theme.primary;
+                            y: 2px;
+                        }
+                        Text {
+                            text: "Petunjuk Pintasan Kasir";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: Theme.text-main;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+
+                    Rectangle {
+                        background: #f0fdf4;
+                        border-color: #bbf7d0;
+                        border-width: 1px;
+                        border-radius: 8px;
+
+                        VerticalLayout {
+                            padding: 12px;
+                            spacing: 4px;
+                            Text {
+                                text: "Mode Kasir Offline Standalone";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: Theme.emerald;
+                            }
+                            Text {
+                                text: "Aplikasi siap memproses pembayaran tanpa ketergantungan koneksi internet.";
+                                font-size: 11px;
+                                color: #166534;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 10px;
+                        Text {
+                            text: "Alur Pembayaran Kasir:";
+                            font-size: 12px;
+                            font-weight: 700;
+                            color: Theme.text-main;
+                        }
+                        Text {
+                            text: "1. Ketik nama atau NIS siswa pada kolom pencarian di header atas.";
+                            font-size: 12px;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: "2. Pilih siswa dari daftar hasil pencarian.";
+                            font-size: 12px;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: "3. Centang tagihan yang akan dibayarkan.";
+                            font-size: 12px;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: "4. Tentukan metode bayar (Tunai, Transfer, Tabungan) lalu klik Proses.";
+                            font-size: 12px;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: "5. Lakukan sinkronisasi data secara berkala ke database online.";
+                            font-size: 12px;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+
+            if root.current-student.id != "": Rectangle {
+                width: 340px;
+                background: Theme.bg-card;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 8px;
+
+                VerticalLayout {
+                    padding: 14px;
                     spacing: 12px;
 
-                    // Header Keranjang
                     HorizontalLayout {
-                        height: 24px;
+                        height: 22px;
                         spacing: 8px;
                         alignment: start;
                         Image {
@@ -465,11 +628,11 @@ export component PosView inherits Rectangle {
                             height: 16px;
                             image-fit: contain;
                             colorize: Theme.primary;
-                            y: 4px;
+                            y: 3px;
                         }
                         Text {
                             text: "Keranjang Pembayaran";
-                            font-size: 14px;
+                            font-size: 13px;
                             font-weight: 700;
                             color: Theme.text-main;
                             vertical-alignment: center;
@@ -495,7 +658,7 @@ export component PosView inherits Rectangle {
                                 horizontal-alignment: center;
                             }
                             Text {
-                                text: "Klik centang pada tagihan di sebelah kiri";
+                                text: "Centang pos tagihan di sebelah kiri";
                                 font-size: 11px;
                                 color: #94a3b8;
                                 horizontal-alignment: center;
@@ -508,7 +671,7 @@ export component PosView inherits Rectangle {
                         VerticalLayout {
                             spacing: 6px;
                             for item in root.cart-items: Rectangle {
-                                height: 46px;
+                                height: 44px;
                                 background: Theme.bg-secondary;
                                 border-radius: 6px;
 
@@ -522,7 +685,7 @@ export component PosView inherits Rectangle {
                                         spacing: 2px;
                                         Text {
                                             text: item.name;
-                                            font-size: 12px;
+                                            font-size: 11px;
                                             font-weight: 600;
                                             color: Theme.text-main;
                                         }
@@ -534,12 +697,11 @@ export component PosView inherits Rectangle {
                                         }
                                     }
 
-                                    // Tombol Hapus item dari cart
                                     Rectangle {
-                                        width: 22px;
-                                        height: 22px;
+                                        width: 20px;
+                                        height: 20px;
                                         background: #fee2e2;
-                                        border-radius: 11px;
+                                        border-radius: 10px;
                                         y: 12px;
                                         HorizontalLayout {
                                             alignment: center;
@@ -575,17 +737,17 @@ export component PosView inherits Rectangle {
                             }
                             Text {
                                 text: root.cart-total;
-                                font-size: 18px;
+                                font-size: 17px;
                                 color: Theme.primary;
                                 font-weight: 800;
                                 vertical-alignment: center;
                             }
                         }
 
-                        // Tab Pilihan Metode Bayar (No Emoji)
+                        // Tab Pilihan Metode Bayar
                         HorizontalLayout {
                             spacing: 6px;
-                            height: 34px;
+                            height: 32px;
 
                             Rectangle {
                                 horizontal-stretch: 1;
@@ -597,7 +759,7 @@ export component PosView inherits Rectangle {
                                 Text {
                                     text: "Tunai";
                                     color: root.selected-payment-method == 0 ? white : Theme.text-main;
-                                    font-size: 12px;
+                                    font-size: 11px;
                                     font-weight: 600;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
@@ -614,7 +776,7 @@ export component PosView inherits Rectangle {
                                 Text {
                                     text: "Transfer";
                                     color: root.selected-payment-method == 1 ? white : Theme.text-main;
-                                    font-size: 12px;
+                                    font-size: 11px;
                                     font-weight: 600;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
@@ -631,7 +793,7 @@ export component PosView inherits Rectangle {
                                 Text {
                                     text: "Tabungan";
                                     color: root.selected-payment-method == 2 ? white : Theme.text-main;
-                                    font-size: 12px;
+                                    font-size: 11px;
                                     font-weight: 600;
                                     horizontal-alignment: center;
                                     vertical-alignment: center;
@@ -641,7 +803,7 @@ export component PosView inherits Rectangle {
 
                         // Tombol Proses Pembayaran
                         Rectangle {
-                            height: 42px;
+                            height: 40px;
                             background: root.is-processing-payment ? #94a3b8 : Theme.emerald;
                             border-radius: 6px;
 
@@ -656,7 +818,7 @@ export component PosView inherits Rectangle {
                                 spacing: 8px;
                                 Text {
                                     text: root.is-processing-payment ? "Memproses Transaksi..." : "PROSES PEMBAYARAN";
-                                    font-size: 13px;
+                                    font-size: 12px;
                                     font-weight: 700;
                                     color: white;
                                     vertical-alignment: center;
@@ -668,9 +830,9 @@ export component PosView inherits Rectangle {
             }
         }
 
-        // 4. Riwayat Transaksi Hari Ini (Bottom Section - Clean Corporate)
+        // 3. Riwayat Transaksi Kasir Hari Ini
         Rectangle {
-            height: 150px;
+            height: 140px;
             background: Theme.bg-card;
             border-color: Theme.border;
             border-width: 1px;
@@ -681,7 +843,7 @@ export component PosView inherits Rectangle {
                 spacing: 8px;
 
                 HorizontalLayout {
-                    height: 20px;
+                    height: 18px;
                     spacing: 8px;
                     alignment: start;
                     Image {
@@ -690,11 +852,11 @@ export component PosView inherits Rectangle {
                         height: 14px;
                         image-fit: contain;
                         colorize: Theme.primary;
-                        y: 3px;
+                        y: 2px;
                     }
                     Text {
                         text: "Transaksi Kasir Hari Ini";
-                        font-size: 13px;
+                        font-size: 12px;
                         font-weight: 700;
                         color: Theme.text-main;
                         vertical-alignment: center;
@@ -707,7 +869,7 @@ export component PosView inherits Rectangle {
                         alignment: center;
                         Text {
                             text: "Belum ada transaksi pembayaran yang dilakukan hari ini.";
-                            font-size: 12px;
+                            font-size: 11px;
                             color: Theme.text-muted;
                             vertical-alignment: center;
                         }
@@ -719,14 +881,14 @@ export component PosView inherits Rectangle {
                     VerticalLayout {
                         spacing: 4px;
                         for tx in root.today-payments: Rectangle {
-                            height: 34px;
+                            height: 32px;
                             background: Theme.bg-secondary;
                             border-radius: 4px;
 
                             HorizontalLayout {
                                 padding-left: 12px;
                                 padding-right: 12px;
-                                spacing: 12px;
+                                spacing: 10px;
                                 alignment: center;
 
                                 Text {
@@ -747,7 +909,7 @@ export component PosView inherits Rectangle {
                                 }
 
                                 Text {
-                                    width: 90px;
+                                    width: 80px;
                                     text: tx.payment_method;
                                     font-size: 11px;
                                     color: Theme.text-muted;
@@ -765,7 +927,7 @@ export component PosView inherits Rectangle {
                                 }
 
                                 Text {
-                                    width: 80px;
+                                    width: 70px;
                                     text: tx.created_at;
                                     font-size: 11px;
                                     color: Theme.text-muted;
@@ -773,18 +935,17 @@ export component PosView inherits Rectangle {
                                     vertical-alignment: center;
                                 }
 
-                                // Tombol Cetak Struk (Clean SVG Icon)
                                 Rectangle {
-                                    width: 26px;
-                                    height: 24px;
+                                    width: 24px;
+                                    height: 22px;
                                     background: Theme.primary-light;
                                     border-radius: 4px;
                                     HorizontalLayout {
                                         alignment: center;
                                         Image {
                                             source: @image-url("../assets/icons/print.svg");
-                                            width: 13px;
-                                            height: 13px;
+                                            width: 12px;
+                                            height: 12px;
                                             image-fit: contain;
                                             colorize: Theme.primary;
                                         }

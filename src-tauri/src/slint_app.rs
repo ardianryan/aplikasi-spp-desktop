@@ -46,7 +46,7 @@ pub struct SlintAppState {
 }
 
 pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🚀 Menjalankan Partisipasi Sekolah Desktop v0.2.0 (100% Native Rust & Slint UI)...");
+    println!("[INFO] Menjalankan Partisipasi Sekolah Desktop v0.2.0 (100% Native Rust & Slint UI)...");
 
     // 1. Inisialisasi Database SQLite lokal
     let conn = crate::db::init_db_standalone()
@@ -110,7 +110,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
     refresh_sync_status_ui(&app, &conn_arc);
 
     // ==========================================
-    // 🎧 EVENT LISTENERS & CALLBACKS
+    // EVENT LISTENERS & CALLBACKS
     // ==========================================
 
     // A. Tab Navigation Changed
@@ -190,6 +190,35 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                 state.lock().unwrap().cart.clear();
 
                 load_student_details_ui(&app, &conn_arc, &state, &student_id);
+            }
+        });
+    }
+
+    // C2. Clear Selected Student (Kembali ke Welcome Banner)
+    {
+        let state = Arc::clone(&state);
+        let app_weak = app_weak.clone();
+        app.on_clear_student(move || {
+            if let Some(app) = app_weak.upgrade() {
+                state.lock().unwrap().selected_student_id = None;
+                state.lock().unwrap().cart.clear();
+                app.set_current_student(StudentData {
+                    id: "".into(),
+                    nis: "-".into(),
+                    nisn: "-".into(),
+                    nama: "".into(),
+                    kelas: "-".into(),
+                    savings_balance: "Rp 0".into(),
+                });
+                app.set_assignments(Rc::new(VecModel::default()).into());
+                app.set_cart_items(Rc::new(VecModel::default()).into());
+                app.set_cart_total("Rp 0".into());
+                app.set_bill_summary(BillSummaryData {
+                    total_tagihan: "Rp 0".into(),
+                    total_dibayar: "Rp 0".into(),
+                    total_keringanan: "Rp 0".into(),
+                    total_tunggakan: "Rp 0".into(),
+                });
             }
         });
     }
@@ -336,14 +365,36 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
 
                             // Jika debet dari Tabungan Siswa
                             if method_id == "tabungan" {
+                                let user_id = get_active_user_id(&tx);
+                                let savings_id: String = tx.query_row(
+                                    "SELECT id FROM savings WHERE student_id = ?1;",
+                                    [&student_id],
+                                    |r| r.get(0)
+                                ).unwrap_or_else(|_| {
+                                    let new_id = Uuid::new_v4().to_string();
+                                    let _ = tx.execute(
+                                        "INSERT INTO savings (id, student_id, balance, is_active, created_at, updated_at, sync_status) 
+                                         VALUES (?1, ?2, 0.0, 1, ?3, ?3, 'pending_push');",
+                                        params![new_id, student_id, now_str]
+                                    );
+                                    new_id
+                                });
+
+                                let cur_bal: f64 = tx.query_row(
+                                    "SELECT balance FROM savings WHERE id = ?1;",
+                                    [&savings_id],
+                                    |r| r.get(0)
+                                ).unwrap_or(0.0);
+
+                                let new_bal = cur_bal - total_amount;
                                 let _ = tx.execute(
-                                    "INSERT INTO savings_mutations (id, student_id, type, amount, notes, created_at, updated_at, is_pushed)
-                                     VALUES (?1, ?2, 'withdraw', ?3, ?4, ?5, ?5, 0);",
-                                    params![Uuid::new_v4().to_string(), student_id, total_amount, format!("Pembayaran {}", tx_code), now_str]
+                                    "INSERT INTO savings_transactions (id, savings_id, type, amount, balance_after, notes, user_id, created_at, sync_status)
+                                     VALUES (?1, ?2, 'tarik', ?3, ?4, ?5, ?6, ?7, 'pending_push');",
+                                    params![Uuid::new_v4().to_string(), savings_id, total_amount, new_bal, format!("Pembayaran {}", tx_code), user_id, now_str]
                                 );
                                 let _ = tx.execute(
-                                    "UPDATE students SET savings_balance = savings_balance - ?1 WHERE id = ?2;",
-                                    params![total_amount, student_id]
+                                    "UPDATE savings SET balance = ?1, updated_at = ?2, sync_status = 'pending_push' WHERE id = ?3;",
+                                    params![new_bal, now_str, savings_id]
                                 );
                             }
 
@@ -428,17 +479,29 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 let sid = state.lock().unwrap().selected_student_id.clone();
                 if let Some(student_id) = sid {
-                    let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
                     if let Ok(conn) = conn_arc.lock() {
-                        let _ = conn.execute(
-                            "INSERT INTO savings_mutations (id, student_id, type, amount, notes, created_at, updated_at, is_pushed)
-                             VALUES (?1, ?2, 'deposit', ?3, ?4, ?5, ?5, 0);",
-                            params![Uuid::new_v4().to_string(), student_id, parsed_amt, note_str.trim(), now_str]
-                        );
-                        let _ = conn.execute(
-                            "UPDATE students SET savings_balance = savings_balance + ?1 WHERE id = ?2;",
-                            params![parsed_amt, student_id]
-                        );
+                        let _ = execute_savings_transaction(&conn, &student_id, "setor", parsed_amt, note_str.trim());
+                    }
+                    load_student_details_ui(&app, &conn_arc, &state, &student_id);
+                }
+            }
+        });
+    }
+
+    {
+        let conn_arc = Arc::clone(&conn_arc);
+        let state = Arc::clone(&state);
+        let app_weak = app_weak.clone();
+        app.on_withdraw_savings(move |amt_str, note_str| {
+            if let Some(app) = app_weak.upgrade() {
+                let parsed_amt: f64 = amt_str.trim().parse().unwrap_or(0.0);
+                if parsed_amt <= 0.0 {
+                    return;
+                }
+                let sid = state.lock().unwrap().selected_student_id.clone();
+                if let Some(student_id) = sid {
+                    if let Ok(conn) = conn_arc.lock() {
+                        let _ = execute_savings_transaction(&conn, &student_id, "tarik", parsed_amt, note_str.trim());
                     }
                     load_student_details_ui(&app, &conn_arc, &state, &student_id);
                 }
@@ -473,8 +536,69 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 // ==========================================
-// 🛠️ UI DATA POPULATORS & HELPERS
+// UI DATA POPULATORS & HELPERS
 // ==========================================
+
+fn get_active_user_id(conn: &Connection) -> String {
+    conn.query_row("SELECT id FROM users LIMIT 1;", [], |r| r.get(0))
+        .unwrap_or_else(|_| "local-cashier".to_string())
+}
+
+fn execute_savings_transaction(
+    conn: &Connection,
+    student_id: &str,
+    tx_type: &str,
+    amount: f64,
+    notes: &str,
+) -> Result<f64, String> {
+    let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let user_id = get_active_user_id(conn);
+
+    let savings_id: String = conn.query_row(
+        "SELECT id FROM savings WHERE student_id = ?1;",
+        [student_id],
+        |r| r.get(0)
+    ).unwrap_or_else(|_| {
+        let new_id = Uuid::new_v4().to_string();
+        let _ = conn.execute(
+            "INSERT INTO savings (id, student_id, balance, is_active, created_at, updated_at, sync_status) 
+             VALUES (?1, ?2, 0.0, 1, ?3, ?3, 'pending_push');",
+            params![new_id, student_id, now_str]
+        );
+        new_id
+    });
+
+    let current_balance: f64 = conn.query_row(
+        "SELECT balance FROM savings WHERE id = ?1;",
+        [&savings_id],
+        |r| r.get(0)
+    ).unwrap_or(0.0);
+
+    let new_balance = match tx_type {
+        "setor" | "deposit" => current_balance + amount,
+        "tarik" | "withdraw" => {
+            if current_balance < amount {
+                return Err("Saldo tabungan tidak mencukupi untuk penarikan!".to_string());
+            }
+            current_balance - amount
+        }
+        _ => return Err("Tipe transaksi tidak valid".to_string()),
+    };
+
+    let trx_id = Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO savings_transactions (id, savings_id, type, amount, balance_after, notes, user_id, created_at, sync_status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'pending_push');",
+        params![trx_id, savings_id, tx_type, amount, new_balance, notes, user_id, now_str]
+    ).map_err(|e| format!("Gagal mencatat mutasi tabungan: {}", e))?;
+
+    conn.execute(
+        "UPDATE savings SET balance = ?1, updated_at = ?2, sync_status = 'pending_push' WHERE id = ?3;",
+        params![new_balance, now_str, savings_id]
+    ).map_err(|e| format!("Gagal update saldo tabungan: {}", e))?;
+
+    Ok(new_balance)
+}
 
 fn load_student_details_ui(
     app: &AppWindow,
@@ -494,7 +618,7 @@ fn load_student_details_ui(
         };
 
         if let Ok(mut stmt) = conn.prepare(
-            "SELECT s.nis, s.nisn, s.nama, c.name, s.savings_balance 
+            "SELECT s.nis, s.nisn, s.nama, c.name 
              FROM students s
              LEFT JOIN classrooms c ON s.classroom_id = c.id
              WHERE s.id = ?1;"
@@ -505,16 +629,22 @@ fn load_student_details_ui(
                     let nisn: Option<String> = row.get(1).unwrap_or(None);
                     let nama: String = row.get(2).unwrap_or_default();
                     let kelas: Option<String> = row.get(3).unwrap_or(None);
-                    let bal: f64 = row.get(4).unwrap_or(0.0);
 
                     s_data.nis = nis.unwrap_or_else(|| "-".into()).into();
                     s_data.nisn = nisn.unwrap_or_else(|| "-".into()).into();
                     s_data.nama = nama.into();
                     s_data.kelas = kelas.unwrap_or_else(|| "-".into()).into();
-                    s_data.savings_balance = format_idr(bal).into();
                 }
             }
         }
+
+        // Ambil Saldo Tabungan dari tabel savings
+        let bal: f64 = conn.query_row(
+            "SELECT balance FROM savings WHERE student_id = ?1;",
+            [student_id],
+            |r| r.get(0)
+        ).unwrap_or(0.0);
+        s_data.savings_balance = format_idr(bal).into();
         app.set_current_student(s_data);
 
         // 2. Data Assignments & Summary
@@ -585,25 +715,27 @@ fn load_student_details_ui(
             total_tunggakan: format_idr(total_tunggakan).into(),
         });
 
-        // 3. Muat Riwayat Tabungan Siswa
+        // 3. Muat Riwayat Tabungan Siswa dari tabel savings_transactions
         let mut sav_hist = Vec::new();
         if let Ok(mut stmt) = conn.prepare(
-            "SELECT id, type, amount, notes, created_at 
-             FROM savings_mutations 
-             WHERE student_id = ?1 
-             ORDER BY created_at DESC LIMIT 20;"
+            "SELECT st.id, st.type, st.amount, st.balance_after, st.notes, st.created_at 
+             FROM savings_transactions st 
+             JOIN savings sv ON st.savings_id = sv.id
+             WHERE sv.student_id = ?1 
+             ORDER BY st.created_at DESC LIMIT 30;"
         ) {
             if let Ok(rows) = stmt.query_map([student_id], |row| {
                 let id: String = row.get(0)?;
                 let m_type: String = row.get(1)?;
                 let amt: f64 = row.get(2)?;
-                let notes: Option<String> = row.get(3)?;
-                let created: String = row.get(4)?;
+                let bal_after: f64 = row.get(3)?;
+                let notes: Option<String> = row.get(4)?;
+                let created: String = row.get(5)?;
                 Ok(SavingsHistoryData {
                     id: id.into(),
                     transaction_type: m_type.into(),
                     amount: format_idr(amt).into(),
-                    balance_after: "-".into(),
+                    balance_after: format_idr(bal_after).into(),
                     notes: notes.unwrap_or_else(|| "-".into()).into(),
                     date: created.into(),
                 })
@@ -649,9 +781,33 @@ fn update_cart_and_selection_ui(app: &AppWindow, state: &SlintAppState) {
 fn refresh_today_payments_ui(app: &AppWindow, conn_arc: &Arc<Mutex<Connection>>) {
     if let Ok(conn) = conn_arc.lock() {
         let today = Local::now().format("%Y-%m-%d").to_string();
-        let q = format!("{}%", today);
-        let mut list = Vec::new();
+        let month = Local::now().format("%Y-%m").to_string();
+        let q_today = format!("{}%", today);
+        let q_month = format!("{}%", month);
 
+        let today_total: f64 = conn.query_row(
+            "SELECT COALESCE(SUM(total_amount), 0.0) FROM payments WHERE created_at LIKE ?1;",
+            [&q_today],
+            |r| r.get(0)
+        ).unwrap_or(0.0);
+
+        let monthly_total: f64 = conn.query_row(
+            "SELECT COALESCE(SUM(total_amount), 0.0) FROM payments WHERE created_at LIKE ?1;",
+            [&q_month],
+            |r| r.get(0)
+        ).unwrap_or(0.0);
+
+        let today_count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM payments WHERE created_at LIKE ?1;",
+            [&q_today],
+            |r| r.get(0)
+        ).unwrap_or(0);
+
+        app.set_today_cashier_total(format_idr(today_total).into());
+        app.set_monthly_cashier_total(format_idr(monthly_total).into());
+        app.set_today_cashier_count(format!("{} Transaksi", today_count).into());
+
+        let mut list = Vec::new();
         if let Ok(mut stmt) = conn.prepare(
             "SELECT p.transaction_code, s.nama, p.total_amount, p.payment_method_id, p.created_at 
              FROM payments p
@@ -659,17 +815,17 @@ fn refresh_today_payments_ui(app: &AppWindow, conn_arc: &Arc<Mutex<Connection>>)
              WHERE p.created_at LIKE ?1
              ORDER BY p.created_at DESC LIMIT 30;"
         ) {
-            if let Ok(rows) = stmt.query_map([&q], |row| {
+            if let Ok(rows) = stmt.query_map([&q_today], |row| {
                 let code: String = row.get(0)?;
                 let name: String = row.get(1)?;
                 let amt: f64 = row.get(2)?;
-                let meth: String = row.get(3)?;
+                let meth: Option<String> = row.get(3)?;
                 let created: String = row.get(4)?;
 
-                let m_label = match meth.as_str() {
-                    "cash" => "Tunai",
-                    "transfer" => "Transfer",
-                    "tabungan" => "Tabungan",
+                let m_label = match meth.as_deref() {
+                    Some("cash") => "Tunai",
+                    Some("transfer") => "Transfer",
+                    Some("tabungan") => "Tabungan",
                     _ => "Lainnya",
                 };
 

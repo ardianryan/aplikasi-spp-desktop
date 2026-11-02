@@ -2,7 +2,7 @@ import { Theme } from "../theme.slint";
 
 export struct SavingsHistoryData {
     id: string,
-    transaction_type: string, // "deposit" | "withdraw"
+    transaction_type: string, // "setor" | "tarik" | "deposit" | "withdraw"
     amount: string,
     balance_after: string,
     notes: string,
@@ -12,8 +12,8 @@ export struct SavingsHistoryData {
 export component SavingsView inherits Rectangle {
     background: Theme.bg-primary;
 
-    in property <string> student-name: "Pilih Siswa di Pencarian Atas";
-    in property <string> student-class: "-";
+    in property <string> student-name: "";
+    in property <string> student-class: "";
     in property <string> current-balance: "Rp 0";
     in-out property <string> input-amount: "";
     in-out property <string> input-notes: "";
@@ -33,14 +33,14 @@ export component SavingsView inherits Rectangle {
             alignment: start;
             Image {
                 source: @image-url("../assets/icons/savings.svg");
-                width: 18px;
-                height: 18px;
+                width: 20px;
+                height: 20px;
                 image-fit: contain;
                 colorize: Theme.emerald;
-                y: 5px;
+                y: 4px;
             }
             Text {
-                text: "Tabungan Siswa";
+                text: "Buku Tabungan Siswa";
                 font-size: 18px;
                 font-weight: 700;
                 color: Theme.text-main;
@@ -48,233 +48,502 @@ export component SavingsView inherits Rectangle {
             }
         }
 
-        // Kartu Saldo Tabungan
-        Rectangle {
-            height: 90px;
-            background: Theme.bg-card;
-            border-color: Theme.border;
-            border-width: 1px;
-            border-radius: 8px;
+        // Tampilan Jika Belum Ada Siswa Dipilih
+        if root.student-name == "" || root.student-name == "Pilih / Cari Siswa Di Atas": HorizontalLayout {
+            spacing: 14px;
+            vertical-stretch: 1;
 
-            HorizontalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                alignment: space-between;
+            Rectangle {
+                horizontal-stretch: 1;
+                background: @linear-gradient(135deg, #002b59 0%, #1a4175 100%);
+                border-radius: 12px;
 
                 VerticalLayout {
                     alignment: center;
-                    spacing: 4px;
-                    Text {
-                        text: "Siswa: " + root.student-name + " (" + root.student-class + ")";
-                        font-size: 14px;
-                        font-weight: 600;
-                        color: Theme.text-main;
-                    }
-                    Text {
-                        text: "Saldo Tersimpan Saat Ini";
-                        font-size: 12px;
-                        color: Theme.text-muted;
-                    }
-                }
+                    spacing: 12px;
+                    padding: 40px;
 
-                Text {
-                    text: root.current-balance;
-                    font-size: 26px;
-                    font-weight: 800;
-                    color: Theme.emerald;
-                    vertical-alignment: center;
-                }
-            }
-        }
-
-        // Form Setor & Tarik Tunai
-        Rectangle {
-            height: 120px;
-            background: Theme.bg-card;
-            border-color: Theme.border;
-            border-width: 1px;
-            border-radius: 8px;
-
-            VerticalLayout {
-                padding: 14px;
-                spacing: 10px;
-
-                Text {
-                    text: "Form Transaksi Tabungan";
-                    font-size: 13px;
-                    font-weight: 700;
-                    color: Theme.text-main;
-                }
-
-                HorizontalLayout {
-                    spacing: 10px;
-
-                    // Input Nominal
-                    Rectangle {
-                        horizontal-stretch: 1;
-                        height: 38px;
-                        background: Theme.bg-primary;
-                        border-color: Theme.border;
-                        border-width: 1px;
-                        border-radius: 6px;
-
-                        HorizontalLayout {
-                            padding-left: 10px;
-                            padding-right: 10px;
-                            TextInput {
-                                text <=> root.input-amount;
-                                font-size: 13px;
-                                vertical-alignment: center;
-                            }
-                        }
-                    }
-
-                    // Input Catatan
-                    Rectangle {
-                        horizontal-stretch: 1;
-                        height: 38px;
-                        background: Theme.bg-primary;
-                        border-color: Theme.border;
-                        border-width: 1px;
-                        border-radius: 6px;
-
-                        HorizontalLayout {
-                            padding-left: 10px;
-                            padding-right: 10px;
-                            TextInput {
-                                text <=> root.input-notes;
-                                font-size: 13px;
-                                vertical-alignment: center;
-                            }
-                        }
-                    }
-
-                    // Tombol Setor
-                    Rectangle {
-                        width: 110px;
-                        height: 38px;
-                        background: Theme.emerald;
-                        border-radius: 6px;
-                        TouchArea {
-                            enabled: !root.is-processing;
-                            clicked => { root.deposit-clicked(root.input-amount, root.input-notes); }
-                            mouse-cursor: pointer;
-                        }
-                        Text {
-                            text: "+ Setor";
-                            color: white;
-                            font-size: 12px;
-                            font-weight: 700;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-                    }
-
-                    // Tombol Tarik
-                    Rectangle {
-                        width: 110px;
-                        height: 38px;
-                        background: Theme.rose;
-                        border-radius: 6px;
-                        TouchArea {
-                            enabled: !root.is-processing;
-                            clicked => { root.withdraw-clicked(root.input-amount, root.input-notes); }
-                            mouse-cursor: pointer;
-                        }
-                        Text {
-                            text: "- Tarik Tunai";
-                            color: white;
-                            font-size: 12px;
-                            font-weight: 700;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Tabel Mutasi Tabungan
-        Rectangle {
-            vertical-stretch: 1;
-            background: Theme.bg-card;
-            border-color: Theme.border;
-            border-width: 1px;
-            border-radius: 8px;
-
-            VerticalLayout {
-                padding: 14px;
-                spacing: 10px;
-
-                Text {
-                    text: "Mutasi Tabungan Terakhir";
-                    font-size: 13px;
-                    font-weight: 700;
-                    color: Theme.text-main;
-                }
-
-                if root.history.length == 0: Rectangle {
-                    vertical-stretch: 1;
                     HorizontalLayout {
                         alignment: center;
+                        Rectangle {
+                            width: 56px;
+                            height: 56px;
+                            background: rgba(255, 255, 255, 0.15);
+                            border-radius: 28px;
+                            HorizontalLayout {
+                                alignment: center;
+                                Image {
+                                    source: @image-url("../assets/icons/savings.svg");
+                                    width: 28px;
+                                    height: 28px;
+                                    image-fit: contain;
+                                    colorize: white;
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        text: "Buku Tabungan Murid";
+                        font-size: 20px;
+                        font-weight: 700;
+                        color: white;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: "Silakan cari dan pilih siswa pada kotak pencarian di atas terlebih dahulu untuk memproses setor atau tarik tabungan.";
+                        font-size: 13px;
+                        color: rgba(255, 255, 255, 0.85);
+                        horizontal-alignment: center;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+
+            Rectangle {
+                width: 340px;
+                background: Theme.bg-card;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 8px;
+
+                VerticalLayout {
+                    padding: 20px;
+                    spacing: 14px;
+
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: start;
+                        Image {
+                            source: @image-url("../assets/icons/savings.svg");
+                            width: 18px;
+                            height: 18px;
+                            image-fit: contain;
+                            colorize: Theme.emerald;
+                            y: 2px;
+                        }
                         Text {
-                            text: "Belum ada riwayat transaksi tabungan untuk siswa ini.";
-                            font-size: 12px;
-                            color: Theme.text-muted;
+                            text: "Petunjuk Tabungan Siswa";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: Theme.text-main;
                             vertical-alignment: center;
                         }
                     }
-                }
 
-                if root.history.length > 0: Flickable {
-                    vertical-stretch: 1;
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+
+                    Rectangle {
+                        background: #f0fdf4;
+                        border-color: #bbf7d0;
+                        border-width: 1px;
+                        border-radius: 8px;
+
+                        VerticalLayout {
+                            padding: 12px;
+                            spacing: 4px;
+                            Text {
+                                text: "Fitur Tabungan Murid";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: Theme.emerald;
+                            }
+                            Text {
+                                text: "Saldo tabungan siswa dapat digunakan untuk memotong pembayaran SPP langsung di kasir.";
+                                font-size: 11px;
+                                color: #166534;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+
                     VerticalLayout {
-                        spacing: 4px;
-                        for mut in root.history: Rectangle {
-                            height: 36px;
-                            background: Theme.bg-secondary;
-                            border-radius: 4px;
+                        spacing: 10px;
+                        Text {
+                            text: "Cara Transaksi Tabungan:";
+                            font-size: 12px;
+                            font-weight: 700;
+                            color: Theme.text-main;
+                        }
+                        Text {
+                            text: "1. Cari dan pilih siswa di kolom header atas.";
+                            font-size: 12px;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: "2. Masukkan nominal setoran atau penarikan pada form.";
+                            font-size: 12px;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: "3. Tambahkan catatan opsional jika diperlukan.";
+                            font-size: 12px;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                        Text {
+                            text: "4. Klik tombol Setor atau Tarik Tunai.";
+                            font-size: 12px;
+                            color: Theme.text-muted;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
 
+        // Tampilan Jika Sudah Ada Siswa Dipilih
+        if root.student-name != "" && root.student-name != "Pilih / Cari Siswa Di Atas": VerticalLayout {
+            spacing: 14px;
+            vertical-stretch: 1;
+
+            // Kartu Saldo Tabungan
+            Rectangle {
+                height: 84px;
+                background: Theme.bg-card;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 8px;
+
+                HorizontalLayout {
+                    padding-left: 20px;
+                    padding-right: 20px;
+                    alignment: space-between;
+
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 3px;
+                        Text {
+                            text: "Siswa: " + root.student-name + " (" + root.student-class + ")";
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: Theme.text-main;
+                        }
+                        Text {
+                            text: "Saldo Tersimpan Saat Ini";
+                            font-size: 12px;
+                            color: Theme.text-muted;
+                        }
+                    }
+
+                    Text {
+                        text: root.current-balance;
+                        font-size: 26px;
+                        font-weight: 800;
+                        color: Theme.emerald;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Form Setor & Tarik Tunai
+            Rectangle {
+                height: 110px;
+                background: Theme.bg-card;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 8px;
+
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 8px;
+
+                    Text {
+                        text: "Form Transaksi Tabungan";
+                        font-size: 13px;
+                        font-weight: 700;
+                        color: Theme.text-main;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 12px;
+
+                        // Input Nominal
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 3px;
+                            Text { text: "Nominal (Rp):"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
+                            Rectangle {
+                                height: 38px;
+                                background: #f8fafc;
+                                border-color: Theme.border;
+                                border-width: 1px;
+                                border-radius: 6px;
+
+                                HorizontalLayout {
+                                    padding-left: 12px;
+                                    padding-right: 12px;
+                                    alignment: center;
+
+                                    Rectangle {
+                                        horizontal-stretch: 1;
+                                        height: 36px;
+                                        if root.input-amount == "": Text {
+                                            x: 0px;
+                                            text: "Contoh: 50000";
+                                            color: #94a3b8;
+                                            font-size: 13px;
+                                            vertical-alignment: center;
+                                        }
+                                        TextInput {
+                                            width: 100%;
+                                            height: 100%;
+                                            text <=> root.input-amount;
+                                            font-size: 13px;
+                                            vertical-alignment: center;
+                                            color: Theme.text-main;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Input Catatan
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 3px;
+                            Text { text: "Catatan (Opsional):"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
+                            Rectangle {
+                                height: 38px;
+                                background: #f8fafc;
+                                border-color: Theme.border;
+                                border-width: 1px;
+                                border-radius: 6px;
+
+                                HorizontalLayout {
+                                    padding-left: 12px;
+                                    padding-right: 12px;
+                                    alignment: center;
+
+                                    Rectangle {
+                                        horizontal-stretch: 1;
+                                        height: 36px;
+                                        if root.input-notes == "": Text {
+                                            x: 0px;
+                                            text: "Keterangan transaksi tabungan...";
+                                            color: #94a3b8;
+                                            font-size: 13px;
+                                            vertical-alignment: center;
+                                        }
+                                        TextInput {
+                                            width: 100%;
+                                            height: 100%;
+                                            text <=> root.input-notes;
+                                            font-size: 13px;
+                                            vertical-alignment: center;
+                                            color: Theme.text-main;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Tombol Aksi (Setor & Tarik)
+                        VerticalLayout {
+                            spacing: 3px;
+                            Text { text: "Aksi:"; font-size: 11px; font-weight: 600; color: transparent; }
                             HorizontalLayout {
-                                padding-left: 12px;
-                                padding-right: 12px;
-                                alignment: space-between;
+                                spacing: 8px;
 
-                                Text {
-                                    text: mut.transaction-type == "deposit" ? "Setor" : "Tarik";
-                                    color: mut.transaction-type == "deposit" ? Theme.emerald : Theme.rose;
-                                    font-size: 12px;
-                                    font-weight: 700;
-                                    vertical-alignment: center;
+                                // Tombol Setor
+                                Rectangle {
+                                    width: 105px;
+                                    height: 38px;
+                                    background: Theme.emerald;
+                                    border-radius: 6px;
+
+                                    TouchArea {
+                                        enabled: !root.is-processing;
+                                        clicked => {
+                                            root.deposit-clicked(root.input-amount, root.input-notes);
+                                        }
+                                        mouse-cursor: pointer;
+                                    }
+
+                                    HorizontalLayout {
+                                        alignment: center;
+                                        spacing: 6px;
+                                        Text {
+                                            text: "+ Setor";
+                                            color: white;
+                                            font-size: 12px;
+                                            font-weight: 700;
+                                            vertical-alignment: center;
+                                        }
+                                    }
                                 }
 
-                                Text {
-                                    text: mut.amount;
-                                    font-size: 12px;
-                                    font-weight: 700;
-                                    color: Theme.text-main;
-                                    vertical-alignment: center;
-                                }
+                                // Tombol Tarik Tunai
+                                Rectangle {
+                                    width: 105px;
+                                    height: 38px;
+                                    background: Theme.rose;
+                                    border-radius: 6px;
 
-                                Text {
-                                    text: "Saldo: " + mut.balance-after;
-                                    font-size: 11px;
-                                    color: Theme.text-muted;
-                                    vertical-alignment: center;
-                                }
+                                    TouchArea {
+                                        enabled: !root.is-processing;
+                                        clicked => {
+                                            root.withdraw-clicked(root.input-amount, root.input-notes);
+                                        }
+                                        mouse-cursor: pointer;
+                                    }
 
-                                Text {
-                                    text: mut.notes;
-                                    font-size: 11px;
-                                    color: Theme.text-muted;
-                                    vertical-alignment: center;
+                                    HorizontalLayout {
+                                        alignment: center;
+                                        spacing: 6px;
+                                        Text {
+                                            text: "- Tarik Tunai";
+                                            color: white;
+                                            font-size: 12px;
+                                            font-weight: 700;
+                                            vertical-alignment: center;
+                                        }
+                                    }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
 
-                                Text {
-                                    text: mut.date;
-                                    font-size: 11px;
-                                    color: Theme.text-muted;
-                                    vertical-alignment: center;
+            // Tabel Riwayat Mutasi Tabungan
+            Rectangle {
+                vertical-stretch: 1;
+                background: Theme.bg-card;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 8px;
+
+                VerticalLayout {
+                    padding: 14px;
+                    spacing: 10px;
+
+                    HorizontalLayout {
+                        height: 22px;
+                        spacing: 8px;
+                        alignment: start;
+                        Image {
+                            source: @image-url("../assets/icons/history.svg");
+                            width: 14px;
+                            height: 14px;
+                            image-fit: contain;
+                            colorize: Theme.primary;
+                            y: 2px;
+                        }
+                        Text {
+                            text: "Mutasi Tabungan Terakhir";
+                            font-size: 13px;
+                            font-weight: 700;
+                            color: Theme.text-main;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+
+                    // Table Columns Header
+                    Rectangle {
+                        height: 32px;
+                        background: Theme.bg-secondary;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            spacing: 8px;
+                            alignment: center;
+                            Text { width: 80px; text: "Jenis"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
+                            Text { width: 120px; text: "Nominal"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
+                            Text { width: 120px; text: "Saldo Akhir"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
+                            Text { horizontal-stretch: 1; text: "Catatan"; font-size: 11px; font-weight: 700; color: Theme.text-muted; }
+                            Text { width: 140px; text: "Waktu"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; }
+                        }
+                    }
+
+                    if root.history.length == 0: Rectangle {
+                        vertical-stretch: 1;
+                        HorizontalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Belum ada catatan mutasi tabungan untuk siswa ini.";
+                                font-size: 12px;
+                                color: Theme.text-muted;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    if root.history.length > 0: Flickable {
+                        vertical-stretch: 1;
+                        VerticalLayout {
+                            spacing: 4px;
+                            for mut in root.history: Rectangle {
+                                height: 36px;
+                                background: Theme.bg-secondary;
+                                border-radius: 4px;
+
+                                HorizontalLayout {
+                                    padding-left: 12px;
+                                    padding-right: 12px;
+                                    spacing: 8px;
+                                    alignment: center;
+
+                                    Rectangle {
+                                        width: 80px;
+                                        height: 20px;
+                                        border-radius: 10px;
+                                        background: (mut.transaction_type == "setor" || mut.transaction_type == "deposit") ? Theme.emerald-light : Theme.rose-light;
+                                        Text {
+                                            text: (mut.transaction_type == "setor" || mut.transaction_type == "deposit") ? "SETOR" : "TARIK";
+                                            color: (mut.transaction_type == "setor" || mut.transaction_type == "deposit") ? Theme.emerald : Theme.rose;
+                                            font-size: 10px;
+                                            font-weight: 700;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    Text {
+                                        width: 120px;
+                                        text: mut.amount;
+                                        font-size: 11px;
+                                        font-weight: 700;
+                                        color: Theme.text-main;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Text {
+                                        width: 120px;
+                                        text: mut.balance_after;
+                                        font-size: 11px;
+                                        color: Theme.text-muted;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Text {
+                                        horizontal-stretch: 1;
+                                        text: mut.notes;
+                                        font-size: 11px;
+                                        color: Theme.text-muted;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Text {
+                                        width: 140px;
+                                        text: mut.date;
+                                        font-size: 11px;
+                                        color: Theme.text-muted;
+                                        horizontal-alignment: right;
+                                        vertical-alignment: center;
+                                    }
                                 }
                             }
                         }

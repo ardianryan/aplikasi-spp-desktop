@@ -37,12 +37,17 @@ export component AppWindow inherits Window {
     in property <bool> show-search-results: false;
     in property <[StudentSearchResult]> search-results: [];
 
+    // Kasir Dashboard Summary State
+    in property <string> today-cashier-total: "Rp 0";
+    in property <string> monthly-cashier-total: "Rp 0";
+    in property <string> today-cashier-count: "0 Transaksi";
+
     // POS State
     in property <StudentData> current-student: {
         id: "",
         nis: "-",
         nisn: "-",
-        nama: "Pilih / Cari Siswa Di Atas",
+        nama: "",
         kelas: "-",
         savings_balance: "Rp 0"
     };
@@ -86,6 +91,7 @@ export component AppWindow inherits Window {
     callback tab-changed(int);
     callback search-changed(string);
     callback student-selected(string);
+    callback clear-student();
     callback toggle-assignment(string);
     callback remove-cart(string);
     callback set-payment-method(int);
@@ -143,6 +149,9 @@ export component AppWindow inherits Window {
                 background: Theme.bg-primary;
 
                 if root.active-tab == 0: PosView {
+                    today-cashier-total: root.today-cashier-total;
+                    monthly-cashier-total: root.monthly-cashier-total;
+                    today-cashier-count: root.today-cashier-count;
                     current-student: root.current-student;
                     summary: root.bill-summary;
                     assignments: root.assignments;
@@ -157,6 +166,7 @@ export component AppWindow inherits Window {
                     select-payment-method(m) => { root.set-payment-method(m); }
                     process-payment-clicked => { root.process-payment(); }
                     print-receipt-clicked(code) => { root.print-receipt(code); }
+                    clear-selected-student => { root.clear-student(); }
                 }
 
                 if root.active-tab == 1: SavingsView {
@@ -204,7 +214,7 @@ export component AppWindow inherits Window {
                 if root.show-search-results: Rectangle {
                     x: 20px;
                     y: 6px;
-                    width: 500px;
+                    width: 480px;
                     height: 280px;
                     background: Theme.bg-card;
                     border-color: Theme.border;
@@ -228,7 +238,7 @@ export component AppWindow inherits Window {
                                 color: Theme.text-muted;
                             }
                             Text {
-                                text: "Klik untuk memilih siswa";
+                                text: "Klik siswa untuk memilih";
                                 font-size: 11px;
                                 color: Theme.primary;
                             }

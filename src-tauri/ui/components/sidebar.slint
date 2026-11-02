@@ -7,24 +7,16 @@ export component SidebarItem inherits Rectangle {
     in property <string> badge-text: "";
     callback clicked();
 
-    height: 44px;
+    height: 42px;
     background: is-active ? Theme.primary-light : touch.has-hover ? #e6ecfc : transparent;
     border-radius: 8px;
     animate background { duration: 150ms; }
 
     HorizontalLayout {
-        padding-left: 12px;
-        padding-right: 12px;
+        padding-left: 14px;
+        padding-right: 14px;
         spacing: 12px;
         alignment: center;
-
-        // Left accent bar for active item
-        if is-active: Rectangle {
-            width: 3px;
-            height: 20px;
-            background: Theme.primary;
-            border-radius: 2px;
-        }
 
         Image {
             source: root.icon-src;
@@ -88,11 +80,11 @@ export component Sidebar inherits Rectangle {
 
         // Header App Brand
         HorizontalLayout {
-            spacing: 10px;
+            spacing: 12px;
             alignment: start;
             Rectangle {
-                width: 36px;
-                height: 36px;
+                width: 38px;
+                height: 38px;
                 background: Theme.primary;
                 border-radius: 8px;
                 HorizontalLayout {
@@ -108,7 +100,7 @@ export component Sidebar inherits Rectangle {
             }
             VerticalLayout {
                 alignment: center;
-                spacing: 1px;
+                spacing: 2px;
                 Text {
                     text: "Partisipasi";
                     font-size: 16px;
@@ -128,9 +120,9 @@ export component Sidebar inherits Rectangle {
             background: Theme.border;
         }
 
-        // Navigation Menu
+        // Navigation Menu Items
         VerticalLayout {
-            spacing: 4px;
+            spacing: 6px;
             horizontal-stretch: 1;
 
             SidebarItem {
@@ -141,7 +133,7 @@ export component Sidebar inherits Rectangle {
             }
 
             SidebarItem {
-                title: "Tabungan Siswa";
+                title: "Buku Tabungan";
                 icon-src: @image-url("../assets/icons/savings.svg");
                 is-active: root.active-tab == 1;
                 clicked => { root.tab-selected(1); }
@@ -170,12 +162,12 @@ export component Sidebar inherits Rectangle {
             }
         }
 
-        // Flexible Space
+        // Flexible Spacer
         Rectangle {
             vertical-stretch: 1;
         }
 
-        // Footer User Profile & Status Loket
+        // Footer Kasir Info Box
         Rectangle {
             background: Theme.bg-card;
             border-radius: 8px;
@@ -247,8 +239,8 @@ export component Sidebar inherits Rectangle {
 
                 Rectangle {
                     height: 28px;
-                    background: #fee2e2;
-                    border-color: #fca5a5;
+                    background: #fff5f5;
+                    border-color: #fecaca;
                     border-width: 1px;
                     border-radius: 6px;
                     touch-logout := TouchArea {
@@ -259,7 +251,7 @@ export component Sidebar inherits Rectangle {
                         text: "Keluar Sesi";
                         font-size: 11px;
                         font-weight: 600;
-                        color: Theme.rose;
+                        color: #dc2626;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                     }
