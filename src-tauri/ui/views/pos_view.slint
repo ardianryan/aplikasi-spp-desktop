@@ -515,13 +515,12 @@ export component PosView inherits Rectangle {
                                             VerticalLayout {
                                                 alignment: center;
                                                 width: 18px;
-                                                Text {
-                                                    text: item.is_collapsed ? "▶" : "▼";
-                                                    font-size: 11px;
-                                                    font-weight: 700;
-                                                    color: Theme.text-muted;
-                                                    horizontal-alignment: center;
-                                                    vertical-alignment: center;
+                                                Image {
+                                                    source: item.is_collapsed ? @image-url("../assets/icons/chevron-right.svg") : @image-url("../assets/icons/chevron-down.svg");
+                                                    width: 13px;
+                                                    height: 13px;
+                                                    image-fit: contain;
+                                                    colorize: item.is_active_year ? Theme.primary : Theme.text-muted;
                                                 }
                                             }
                                         }

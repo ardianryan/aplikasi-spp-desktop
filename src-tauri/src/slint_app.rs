@@ -45,6 +45,7 @@ pub struct SlintAppState {
     pub user_role: String,
     pub is_logged_in: bool,
     pub collapsed_years: std::collections::HashSet<String>,
+    pub student_filter_status: i32, // 0: Siswa Aktif, 1: Non-Aktif
 }
 
 fn get_launch_agent_path() -> Option<std::path::PathBuf> {
@@ -193,6 +194,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
         user_role: "Petugas Kasir".to_string(),
         is_logged_in: false,
         collapsed_years: std::collections::HashSet::new(),
+        student_filter_status: 0,
     }));
 
     // Close-to-Tray (Sembunyikan ke background saat tombol tutup ditekan agar autosync tetap aktif)
@@ -223,7 +225,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
             update_branding_and_settings(&app, &conn);
 
             let api_url: String = conn.query_row("SELECT value FROM settings WHERE key = 'api_url';", [], |r| r.get(0))
-                .unwrap_or_else(|_| "https://sekolah.id".to_string());
+                .unwrap_or_else(|_| "http://sumbangan.smage.my.id".to_string());
             app.set_api_endpoint_url(api_url.into());
 
             let has_pin = crate::commands::has_offline_pin_conn(&conn).unwrap_or(false);
@@ -232,6 +234,38 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
             }
             app.set_has_offline_pin(true);
         }
+    }
+
+    // Lakukan pemeriksaan status koneksi server secara cepat saat startup
+    {
+        let app_weak_init = app.as_weak();
+        let conn_arc_init = Arc::clone(&conn_arc);
+        std::thread::spawn(move || {
+            let api_url = if let Ok(conn) = conn_arc_init.lock() {
+                conn.query_row("SELECT value FROM settings WHERE key = 'api_url';", [], |r| r.get::<_, String>(0))
+                    .unwrap_or_else(|_| "http://sumbangan.smage.my.id".to_string())
+            } else {
+                "http://sumbangan.smage.my.id".to_string()
+            };
+            let ping_url = format!("{}/api/v1/ping", api_url.trim_end_matches('/'));
+            if let Ok(rt) = tokio::runtime::Runtime::new() {
+                rt.block_on(async {
+                    let client = reqwest::Client::builder()
+                        .timeout(std::time::Duration::from_secs(4))
+                        .build();
+                    if let Ok(c) = client {
+                        if let Ok(resp) = c.get(&ping_url).send().await {
+                            let online = resp.status().is_success();
+                            let _ = slint::invoke_from_event_loop(move || {
+                                if let Some(app) = app_weak_init.upgrade() {
+                                    app.set_is_online(online);
+                                }
+                            });
+                        }
+                    }
+                });
+            }
+        });
     }
 
     // Cek Tahun Ajaran Aktif dari DB
@@ -349,49 +383,31 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    // B. Search Student Query Changed
+    // B. Search Student Query Changed & Filter Status
     {
         let conn_arc = Arc::clone(&conn_arc);
+        let state = Arc::clone(&state);
         let app_weak = app_weak.clone();
         app.on_search_changed(move |query| {
             if let Some(app) = app_weak.upgrade() {
-                let trimmed = query.trim();
-                if trimmed.is_empty() {
-                    app.set_show_search_results(false);
-                    app.set_search_results(Rc::new(VecModel::default()).into());
-                    return;
-                }
+                perform_student_search(&app, &conn_arc, &state, &query);
+            }
+        });
+    }
 
-                if let Ok(conn) = conn_arc.lock() {
-                    let q = format!("%{}%", trimmed);
-                    let mut list = Vec::new();
-                    if let Ok(mut stmt) = conn.prepare(
-                        "SELECT s.id, s.nama, s.nis, s.nisn, c.name as kelas 
-                         FROM students s
-                         LEFT JOIN classrooms c ON s.classroom_id = c.id
-                         WHERE (s.nama LIKE ?1 OR s.nis LIKE ?1 OR s.nisn LIKE ?1)
-                         ORDER BY s.nama ASC
-                         LIMIT 10;"
-                    ) {
-                        if let Ok(rows) = stmt.query_map([&q], |row| {
-                            Ok(StudentSearchResult {
-                                id: row.get::<_, String>(0)?.into(),
-                                nama: row.get::<_, String>(1)?.into(),
-                                nis: row.get::<_, Option<String>>(2)?.unwrap_or_else(|| "-".into()).into(),
-                                nisn: row.get::<_, Option<String>>(3)?.unwrap_or_else(|| "-".into()).into(),
-                                kelas: row.get::<_, Option<String>>(4)?.unwrap_or_else(|| "-".into()).into(),
-                            })
-                        }) {
-                            for item in rows.flatten() {
-                                list.push(item);
-                            }
-                        }
-                    }
-
-                    let has_results = !list.is_empty();
-                    app.set_search_results(Rc::new(VecModel::from(list)).into());
-                    app.set_show_search_results(has_results);
+    // B2. Student Filter Status Changed (0 = Siswa Aktif, 1 = Non-Aktif / Alumni)
+    {
+        let conn_arc = Arc::clone(&conn_arc);
+        let state = Arc::clone(&state);
+        let app_weak = app_weak.clone();
+        app.on_student_filter_changed(move |filter_status| {
+            if let Some(app) = app_weak.upgrade() {
+                {
+                    let mut st = state.lock().unwrap();
+                    st.student_filter_status = filter_status;
                 }
+                let query = app.get_search_query().to_string();
+                perform_student_search(&app, &conn_arc, &state, &query);
             }
         });
     }
@@ -408,7 +424,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                 state.lock().unwrap().selected_student_id = Some(student_id.to_string());
                 state.lock().unwrap().cart.clear();
 
-                load_student_details_ui(&app, &conn_arc, &state, &student_id);
+                load_student_details_ui(&app, &conn_arc, &state, &student_id, true);
             }
         });
     }
@@ -482,36 +498,24 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
     // D2. Toggle Academic Year Group Accordion Collapse/Expand
     {
         let state = Arc::clone(&state);
+        let conn_arc = Arc::clone(&conn_arc);
         let app_weak = app_weak.clone();
         app.on_toggle_year_collapse(move |year_name_slint| {
             if let Some(app) = app_weak.upgrade() {
                 let year_str = year_name_slint.to_string();
-                let is_now_collapsed = {
+                let student_id_opt = {
                     let mut st = state.lock().unwrap();
                     if st.collapsed_years.contains(&year_str) {
                         st.collapsed_years.remove(&year_str);
-                        false
                     } else {
                         st.collapsed_years.insert(year_str.clone());
-                        true
                     }
+                    st.selected_student_id.clone()
                 };
 
-                let assignments_model = app.get_assignments();
-                let mut updated_vec = Vec::new();
-                for i in 0..assignments_model.row_count() {
-                    if let Some(mut item) = assignments_model.row_data(i) {
-                        if item.academic_year_name == year_str.as_str() {
-                            if item.is_group_header {
-                                item.is_collapsed = is_now_collapsed;
-                            } else {
-                                item.is_hidden = is_now_collapsed;
-                            }
-                        }
-                        updated_vec.push(item);
-                    }
+                if let Some(sid) = student_id_opt {
+                    load_student_details_ui(&app, &conn_arc, &state, &sid, false);
                 }
-                app.set_assignments(Rc::new(VecModel::from(updated_vec)).into());
             }
         });
     }
@@ -670,7 +674,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                 if success {
                     state.lock().unwrap().cart.clear();
                     // Refresh data siswa & ringkasan
-                    load_student_details_ui(&app, &conn_arc, &state, &student_id);
+                    load_student_details_ui(&app, &conn_arc, &state, &student_id, false);
                     refresh_today_payments_ui(&app, &conn_arc);
                     refresh_sync_status_ui(&app, &conn_arc);
 
@@ -773,7 +777,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     if let Ok(conn) = conn_arc.lock() {
                         let _ = execute_savings_transaction(&conn, &student_id, "setor", parsed_amt, note_str.trim());
                     }
-                    load_student_details_ui(&app, &conn_arc, &state, &student_id);
+                    load_student_details_ui(&app, &conn_arc, &state, &student_id, false);
                 }
             }
         });
@@ -794,7 +798,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     if let Ok(conn) = conn_arc.lock() {
                         let _ = execute_savings_transaction(&conn, &student_id, "tarik", parsed_amt, note_str.trim());
                     }
-                    load_student_details_ui(&app, &conn_arc, &state, &student_id);
+                    load_student_details_ui(&app, &conn_arc, &state, &student_id, false);
                 }
             }
         });
@@ -1187,7 +1191,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
             let token_opt = {
                 if let Ok(conn) = conn_arc.lock() {
                     conn.query_row(
-                        "SELECT value FROM settings WHERE key = 'api_key' UNION SELECT value FROM settings WHERE key = 'api_token' LIMIT 1;",
+                        "SELECT value FROM settings WHERE key = 'api_key' UNION SELECT value FROM settings WHERE key = 'api_token' UNION SELECT token FROM user_tokens ORDER BY expires_at DESC LIMIT 1;",
                         [],
                         |r| r.get::<_, String>(0)
                     ).ok()
@@ -1197,7 +1201,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             std::thread::spawn(move || {
-                let ping_url = format!("{}/api/v1/sync/status", clean_url);
+                let ping_url = format!("{}/api/v1/ping", clean_url);
                 let rt = tokio::runtime::Runtime::new();
                 let res = if let Ok(rt) = rt {
                     rt.block_on(async {
@@ -1215,8 +1219,12 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                         }
                         let resp = req.send().await.map_err(|e| format!("Tidak dapat menghubungi server: {}", e))?;
                         let status = resp.status();
-                        if status.is_success() || status.as_u16() == 401 {
-                            Ok(format!("Terhubung (HTTP {})", status.as_u16()))
+                        if status.is_success() {
+                            let payload: serde_json::Value = resp.json().await.unwrap_or_default();
+                            let school = payload["school_name"].as_str().unwrap_or("Server Partisipasi");
+                            Ok(format!("Terhubung ke peladen web {}", school))
+                        } else if status.as_u16() == 401 {
+                            Ok("Terhubung (Perlu otorisasi API key)".to_string())
                         } else {
                             Err(format!("Server merespons kode {}", status.as_u16()))
                         }
@@ -1392,7 +1400,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     if let Ok(conn) = conn_arc_sync.lock() {
                         let u: String = conn.query_row("SELECT value FROM settings WHERE key = 'api_url';", [], |r| r.get(0)).unwrap_or_default();
                         let t: String = conn.query_row(
-                            "SELECT value FROM settings WHERE key = 'api_key' UNION SELECT value FROM settings WHERE key = 'api_token' LIMIT 1;",
+                            "SELECT value FROM settings WHERE key = 'api_key' UNION SELECT value FROM settings WHERE key = 'api_token' UNION SELECT token FROM user_tokens ORDER BY expires_at DESC LIMIT 1;",
                             [],
                             |r| r.get(0)
                         ).unwrap_or_default();
@@ -1402,37 +1410,44 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 };
 
-                if !api_url.is_empty() && !api_token.is_empty() {
-                    let ping_url = format!("{}/api/v1/sync/status", api_url.trim_end_matches('/'));
-                    let rt = tokio::runtime::Runtime::new();
-                    let server_online = if let Ok(ref rt) = rt {
-                        rt.block_on(async {
-                            let client = reqwest::Client::builder()
-                                .timeout(std::time::Duration::from_secs(5))
-                                .build();
-                            if let Ok(c) = client {
-                                c.get(&ping_url)
-                                    .header("X-API-Key", &api_token)
-                                    .send()
-                                    .await
-                                    .map(|resp| resp.status().is_success() || resp.status().as_u16() == 401)
-                                    .unwrap_or(false)
-                            } else {
-                                false
+                let target_url = if api_url.trim().is_empty() {
+                    "http://sumbangan.smage.my.id".to_string()
+                } else {
+                    api_url.trim().to_string()
+                };
+
+                let ping_url = format!("{}/api/v1/ping", target_url.trim_end_matches('/'));
+                let rt = tokio::runtime::Runtime::new();
+                let server_online = if let Ok(ref rt) = rt {
+                    rt.block_on(async {
+                        let client = reqwest::Client::builder()
+                            .timeout(std::time::Duration::from_secs(5))
+                            .build();
+                        if let Ok(c) = client {
+                            let mut req = c.get(&ping_url);
+                            if !api_token.is_empty() {
+                                req = req.header("X-API-Key", &api_token);
                             }
-                        })
-                    } else {
-                        false
-                    };
-
-                    let app_weak_cb = app_weak_sync.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        if let Some(app) = app_weak_cb.upgrade() {
-                            app.set_is_online(server_online);
+                            req.send()
+                                .await
+                                .map(|resp| resp.status().is_success() || resp.status().as_u16() == 401)
+                                .unwrap_or(false)
+                        } else {
+                            false
                         }
-                    });
+                    })
+                } else {
+                    false
+                };
 
-                    if server_online {
+                let app_weak_cb = app_weak_sync.clone();
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(app) = app_weak_cb.upgrade() {
+                        app.set_is_online(server_online);
+                    }
+                });
+
+                if server_online && !api_token.is_empty() {
                         let pending_count: i64 = {
                             if let Ok(conn) = conn_arc_sync.lock() {
                                 let p1: i64 = conn.query_row("SELECT count(*) FROM payments WHERE sync_status = 'pending_push';", [], |r| r.get(0)).unwrap_or(0);
@@ -1482,7 +1497,6 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                             });
                         }
                     }
-                }
 
                 std::thread::sleep(std::time::Duration::from_secs(30));
             }
@@ -1866,11 +1880,62 @@ fn execute_savings_transaction(
     Ok(new_balance)
 }
 
+fn perform_student_search(
+    app: &AppWindow,
+    conn_arc: &Arc<Mutex<Connection>>,
+    state: &Arc<Mutex<SlintAppState>>,
+    query: &str,
+) {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        app.set_show_search_results(false);
+        app.set_search_results(Rc::new(VecModel::default()).into());
+        return;
+    }
+
+    let filter_status = state.lock().unwrap().student_filter_status;
+    let active_val = if filter_status == 1 { 0 } else { 1 };
+
+    if let Ok(conn) = conn_arc.lock() {
+        let q = format!("%{}%", trimmed);
+        let mut list = Vec::new();
+        if let Ok(mut stmt) = conn.prepare(
+            "SELECT s.id, s.nama, s.nis, s.nisn, c.name as kelas, COALESCE(s.is_active, 1) as is_act 
+             FROM students s
+             LEFT JOIN classrooms c ON s.classroom_id = c.id
+             WHERE COALESCE(s.is_active, 1) = ?1 
+               AND (s.nama LIKE ?2 OR s.nis LIKE ?2 OR s.nisn LIKE ?2)
+             ORDER BY s.nama ASC
+             LIMIT 12;"
+        ) {
+            if let Ok(rows) = stmt.query_map(rusqlite::params![active_val, &q], |row| {
+                Ok(StudentSearchResult {
+                    id: row.get::<_, String>(0)?.into(),
+                    nama: row.get::<_, String>(1)?.into(),
+                    nis: row.get::<_, Option<String>>(2)?.unwrap_or_else(|| "-".into()).into(),
+                    nisn: row.get::<_, Option<String>>(3)?.unwrap_or_else(|| "-".into()).into(),
+                    kelas: row.get::<_, Option<String>>(4)?.unwrap_or_else(|| "-".into()).into(),
+                    is_active: row.get::<_, i32>(5).unwrap_or(1) == 1,
+                })
+            }) {
+                for item in rows.flatten() {
+                    list.push(item);
+                }
+            }
+        }
+
+        let has_results = !list.is_empty();
+        app.set_search_results(Rc::new(VecModel::from(list)).into());
+        app.set_show_search_results(has_results);
+    }
+}
+
 fn load_student_details_ui(
     app: &AppWindow,
     conn_arc: &Arc<Mutex<Connection>>,
     state: &Arc<Mutex<SlintAppState>>,
     student_id: &str,
+    reset_collapse: bool,
 ) {
     if let Ok(conn) = conn_arc.lock() {
         // 1. Data Siswa
@@ -1966,8 +2031,8 @@ fn load_student_details_ui(
                     stat.1 += r.7; // remaining
                 }
 
-                // Reset status collapsible untuk siswa baru: TP aktif dibuka, TP lama diciutkan (default)
-                {
+                // Reset status collapsible jika diminta: TP aktif dibuka, TP lama diciutkan (default)
+                if reset_collapse {
                     let mut st = state.lock().unwrap();
                     st.collapsed_years.clear();
                     for r in &all_rows {
@@ -1997,7 +2062,7 @@ fn load_student_details_ui(
                         let rem_text = if rem_sum > 0.0 {
                             format!("Sisa: {}", format_idr(rem_sum))
                         } else {
-                            "Lunas ✓".to_string()
+                            "Lunas".to_string()
                         };
 
                         assignments_vec.push(AssignmentData {
@@ -2023,28 +2088,30 @@ fn load_student_details_ui(
                     }
 
                     let is_collapsed = state.lock().unwrap().collapsed_years.contains(&year_name);
-                    let is_sel = state.lock().unwrap().cart.iter().any(|c| c.assignment_id == r.0);
+                    if !is_collapsed {
+                        let is_sel = state.lock().unwrap().cart.iter().any(|c| c.assignment_id == r.0);
 
-                    assignments_vec.push(AssignmentData {
-                        id: r.0.into(),
-                        academic_year_name: year_name.into(),
-                        payment_type_name: r.1.into(),
-                        payment_type_type: r.2.into(),
-                        month_name: r.3.into(),
-                        amount: format_idr(r.4).into(),
-                        paid_amount: format_idr(r.5).into(),
-                        remaining_amount: format_idr(r.7).into(),
-                        remaining_raw: r.7 as i32,
-                        status: r.8.into(),
-                        is_selected: is_sel,
-                        is_group_header: false,
-                        group_header_title: "".into(),
-                        is_active_year: is_active,
-                        is_collapsed: false,
-                        is_hidden: is_collapsed,
-                        total_bills_in_year: 0,
-                        total_remaining_in_year: "".into(),
-                    });
+                        assignments_vec.push(AssignmentData {
+                            id: r.0.into(),
+                            academic_year_name: year_name.into(),
+                            payment_type_name: r.1.into(),
+                            payment_type_type: r.2.into(),
+                            month_name: r.3.into(),
+                            amount: format_idr(r.4).into(),
+                            paid_amount: format_idr(r.5).into(),
+                            remaining_amount: format_idr(r.7).into(),
+                            remaining_raw: r.7 as i32,
+                            status: r.8.into(),
+                            is_selected: is_sel,
+                            is_group_header: false,
+                            group_header_title: "".into(),
+                            is_active_year: is_active,
+                            is_collapsed: false,
+                            is_hidden: false,
+                            total_bills_in_year: 0,
+                            total_remaining_in_year: "".into(),
+                        });
+                    }
                 }
             }
         }

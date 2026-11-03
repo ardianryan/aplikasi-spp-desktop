@@ -97,14 +97,17 @@ export component HistoryView inherits Rectangle {
                 padding-left: 14px;
                 padding-right: 14px;
                 spacing: 10px;
-                alignment: center;
 
-                Image {
-                    source: @image-url("../assets/icons/search.svg");
+                VerticalLayout {
+                    alignment: center;
                     width: 16px;
-                    height: 16px;
-                    image-fit: contain;
-                    colorize: Theme.text-muted;
+                    Image {
+                        source: @image-url("../assets/icons/search.svg");
+                        width: 16px;
+                        height: 16px;
+                        image-fit: contain;
+                        colorize: Theme.text-muted;
+                    }
                 }
 
                 Rectangle {
@@ -117,6 +120,7 @@ export component HistoryView inherits Rectangle {
                         color: Theme.text-muted;
                         font-size: 13px;
                         vertical-alignment: center;
+                        horizontal-alignment: left;
                     }
 
                     TextInput {
@@ -125,6 +129,7 @@ export component HistoryView inherits Rectangle {
                         text <=> root.filter-search;
                         font-size: 13px;
                         vertical-alignment: center;
+                        horizontal-alignment: left;
                         edited => { root.search-changed(self.text); }
                     }
                 }

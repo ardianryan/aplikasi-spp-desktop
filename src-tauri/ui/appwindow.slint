@@ -15,6 +15,7 @@ export struct StudentSearchResult {
     nis: string,
     nisn: string,
     kelas: string,
+    is_active: bool,
 }
 
 export struct ReceiptModalItem {
@@ -67,6 +68,7 @@ export component AppWindow inherits Window {
     // Search state
     in-out property <string> search-query: "";
     in-out property <bool> show-search-results: false;
+    in-out property <int> student-filter-status: 0;
     in property <[StudentSearchResult]> search-results: [];
 
     // Kasir Dashboard Summary State
@@ -141,6 +143,7 @@ export component AppWindow inherits Window {
     // Callbacks to Rust Controller
     callback tab-changed(int);
     callback search-changed(string);
+    callback student-filter-changed(int);
     callback student-selected(string);
     callback clear-student();
     callback toggle-assignment(string);
@@ -220,6 +223,10 @@ export component AppWindow inherits Window {
                 search-query <=> root.search-query;
                 active-academic-year: root.active-academic-year;
                 is-syncing: root.is-syncing;
+                student-filter-status <=> root.student-filter-status;
+                student-filter-changed(st) => {
+                    root.student-filter-changed(st);
+                }
                 search-changed(q) => {
                     root.search-changed(q);
                 }
@@ -356,9 +363,9 @@ export component AppWindow inherits Window {
 
                 // Search Results Dropdown Popup (bila ada hasil search)
                 if root.show-search-results: Rectangle {
-                    x: 20px;
+                    x: 232px;
                     y: 6px;
-                    width: 480px;
+                    width: 380px;
                     height: root.search-results.length == 0 ? 84px : Math.min(320px, 46px + root.search-results.length * 52px);
                     background: Theme.bg-card;
                     border-color: Theme.border;
@@ -377,7 +384,7 @@ export component AppWindow inherits Window {
                             padding-right: 6px;
                             alignment: space-between;
                             Text {
-                                text: "Hasil Pencarian Siswa:";
+                                text: root.student-filter-status == 0 ? "Hasil Pencarian Siswa Aktif:" : "Hasil Pencarian Siswa Non-Aktif / Alumni:";
                                 font-size: 11px;
                                 font-weight: 700;
                                 color: Theme.text-muted;
@@ -452,11 +459,34 @@ export component AppWindow inherits Window {
                                                 color: Theme.text-main;
                                                 horizontal-alignment: left;
                                             }
-                                            Text {
-                                                text: "NIS: " + res.nis + " | Kelas: " + res.kelas;
-                                                font-size: 11px;
-                                                color: Theme.text-muted;
-                                                horizontal-alignment: left;
+                                            HorizontalLayout {
+                                                spacing: 6px;
+                                                alignment: start;
+                                                Text {
+                                                    text: "NIS: " + res.nis + " | Kelas: " + res.kelas;
+                                                    font-size: 11px;
+                                                    color: Theme.text-muted;
+                                                    horizontal-alignment: left;
+                                                    vertical-alignment: center;
+                                                }
+                                                if !res.is_active: Rectangle {
+                                                    height: 16px;
+                                                    background: #fef2f2;
+                                                    border-color: #fca5a5;
+                                                    border-width: 1px;
+                                                    border-radius: 3px;
+                                                    HorizontalLayout {
+                                                        padding-left: 4px;
+                                                        padding-right: 4px;
+                                                        Text {
+                                                            text: "Non-Aktif";
+                                                            font-size: 9px;
+                                                            font-weight: 700;
+                                                            color: #dc2626;
+                                                            vertical-alignment: center;
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
 
@@ -797,13 +827,18 @@ export component AppWindow inherits Window {
                             clicked => { root.show-about-modal = false; }
                             mouse-cursor: pointer;
                         }
-                        Text {
-                            text: "✕";
-                            font-size: 14px;
-                            font-weight: 700;
-                            color: Theme.text-muted;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                        HorizontalLayout {
+                            alignment: center;
+                            VerticalLayout {
+                                alignment: center;
+                                Image {
+                                    source: @image-url("assets/icons/close.svg");
+                                    width: 12px;
+                                    height: 12px;
+                                    image-fit: contain;
+                                    colorize: Theme.text-muted;
+                                }
+                            }
                         }
                     }
                 }

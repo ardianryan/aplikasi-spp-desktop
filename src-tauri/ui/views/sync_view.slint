@@ -102,9 +102,20 @@ export component SyncView inherits Rectangle {
                         HorizontalLayout {
                             alignment: space-between;
                             HorizontalLayout {
-                                spacing: 6px;
+                                spacing: 8px;
+                                VerticalLayout {
+                                    alignment: center;
+                                    width: 14px;
+                                    Image {
+                                        source: root.is-authenticated ? @image-url("../assets/icons/check.svg") : @image-url("../assets/icons/lock.svg");
+                                        width: 13px;
+                                        height: 13px;
+                                        image-fit: contain;
+                                        colorize: root.is-authenticated ? Theme.emerald : Theme.amber;
+                                    }
+                                }
                                 Text {
-                                    text: root.is-authenticated ? "✓ Terminal Terotorisasi Otomatis" : "⚠ Menunggu Otorisasi Masuk";
+                                    text: root.is-authenticated ? "Terminal Terotorisasi Otomatis" : "Menunggu Otorisasi Masuk";
                                     font-size: 12px;
                                     font-weight: 700;
                                     color: root.is-authenticated ? Theme.emerald : Theme.amber;
@@ -177,7 +188,7 @@ export component SyncView inherits Rectangle {
                                     mouse-cursor: pointer;
                                 }
                                 Text {
-                                    text: root.autostart-enabled ? "✓ Aktif" : "Nonaktif";
+                                    text: root.autostart-enabled ? "Aktif" : "Nonaktif";
                                     color: root.autostart-enabled ? white : Theme.text-muted;
                                     font-size: 11px;
                                     font-weight: 700;
@@ -215,7 +226,7 @@ export component SyncView inherits Rectangle {
                     }
 
                     Rectangle {
-                        width: 130px;
+                        width: 140px;
                         height: 36px;
                         background: root.is-testing ? #e2e8f0 : touch-test.has-hover ? #e2e8f0 : #ffffff;
                         border-color: Theme.border;
@@ -227,13 +238,27 @@ export component SyncView inherits Rectangle {
                             clicked => { root.test-connection-clicked(root.base-url); }
                             mouse-cursor: pointer;
                         }
-                        Text {
-                            text: root.is-testing ? "Menguji..." : "🔗 Uji Sambungan";
-                            color: Theme.text-main;
-                            font-size: 12px;
-                            font-weight: 700;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 6px;
+                            VerticalLayout {
+                                alignment: center;
+                                width: 14px;
+                                Image {
+                                    source: @image-url("../assets/icons/globe.svg");
+                                    width: 13px;
+                                    height: 13px;
+                                    image-fit: contain;
+                                    colorize: Theme.text-main;
+                                }
+                            }
+                            Text {
+                                text: root.is-testing ? "Menguji..." : "Uji Sambungan";
+                                color: Theme.text-main;
+                                font-size: 12px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
                         }
                     }
 
