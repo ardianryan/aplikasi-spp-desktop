@@ -396,7 +396,7 @@ export component AppWindow inherits Window {
                 if root.show-search-results: Rectangle {
                     x: 232px;
                     y: 6px;
-                    width: 380px;
+                    width: 480px;
                     height: root.search-results.length == 0 ? 84px : Math.min(320px, 46px + root.search-results.length * 52px);
                     background: Theme.bg-card;
                     border-color: Theme.border;
@@ -489,6 +489,7 @@ export component AppWindow inherits Window {
                                                 font-weight: 700;
                                                 color: Theme.text-main;
                                                 horizontal-alignment: left;
+                                                overflow: elide;
                                             }
                                             HorizontalLayout {
                                                 spacing: 6px;
@@ -499,6 +500,7 @@ export component AppWindow inherits Window {
                                                     color: Theme.text-muted;
                                                     horizontal-alignment: left;
                                                     vertical-alignment: center;
+                                                    overflow: elide;
                                                 }
                                                 if !res.is_active: Rectangle {
                                                     height: 16px;
@@ -523,14 +525,14 @@ export component AppWindow inherits Window {
 
                                         VerticalLayout {
                                             alignment: center;
+                                            width: 58px;
                                             Rectangle {
+                                                width: 58px;
                                                 height: 26px;
                                                 background: touch-res.has-hover ? Theme.primary-hover : Theme.primary;
                                                 border-radius: 4px;
                                                 animate background { duration: 150ms; }
                                                 HorizontalLayout {
-                                                    padding-left: 12px;
-                                                    padding-right: 12px;
                                                     alignment: center;
                                                     Text {
                                                         text: "Pilih";
@@ -559,7 +561,7 @@ export component AppWindow inherits Window {
         }
     }
 
-    // Modal Pratinjau & Cetak Kwitansi Native (In-App Receipt Modal)
+    // Modal Pratinjau & Cetak Kwitansi (In-App Receipt Modal)
     if root.show-receipt-modal: Rectangle {
         x: 0px;
         y: 0px;
@@ -1029,7 +1031,7 @@ export component AppWindow inherits Window {
                                 color: Theme.primary;
                             }
                             Text {
-                                text: "Sistem Kasir POS & Tabungan Offline Terenkripsi";
+                                text: "Aplikasi Kasir dan Pembayaran Sumbangan Sekolah";
                                 font-size: 11px;
                                 color: Theme.text-muted;
                             }
@@ -1043,7 +1045,7 @@ export component AppWindow inherits Window {
                                         padding-left: 8px;
                                         padding-right: 8px;
                                         Text {
-                                            text: "v0.2.0 Native Edition";
+                                            text: "Versi 0.2.0";
                                             font-size: 10px;
                                             font-weight: 700;
                                             color: Theme.primary;
@@ -1070,25 +1072,25 @@ export component AppWindow inherits Window {
                         HorizontalLayout {
                             alignment: space-between;
                             Text { text: "Pengembang:"; font-size: 11px; color: Theme.text-muted; }
-                            Text { text: "Tim IT PPTI SMAN 1 Gedeg"; font-size: 11px; font-weight: 600; color: Theme.text-main; }
+                            Text { text: "PMTI SMAN 1 GEDEG"; font-size: 11px; font-weight: 600; color: Theme.text-main; }
                         }
                         Rectangle { height: 1px; background: Theme.border-muted; }
                         HorizontalLayout {
                             alignment: space-between;
-                            Text { text: "Arsitektur Engine:"; font-size: 11px; color: Theme.text-muted; }
-                            Text { text: "100% Native Rust & Slint UI"; font-size: 11px; font-weight: 600; color: Theme.text-main; }
+                            Text { text: "Instansi:"; font-size: 11px; color: Theme.text-muted; }
+                            Text { text: "SMA Negeri 1 Gedeg"; font-size: 11px; font-weight: 600; color: Theme.text-main; }
                         }
                         Rectangle { height: 1px; background: Theme.border-muted; }
                         HorizontalLayout {
                             alignment: space-between;
-                            Text { text: "Keamanan Basis Data:"; font-size: 11px; color: Theme.text-muted; }
-                            Text { text: "SQLite SQLCipher AES-256"; font-size: 11px; font-weight: 600; color: Theme.emerald; }
+                            Text { text: "Layanan:"; font-size: 11px; color: Theme.text-muted; }
+                            Text { text: "Pembayaran Sumbangan & Kasir POS"; font-size: 11px; font-weight: 600; color: Theme.emerald; }
                         }
                         Rectangle { height: 1px; background: Theme.border-muted; }
                         HorizontalLayout {
                             alignment: space-between;
-                            Text { text: "Kompatibilitas Versi:"; font-size: 11px; color: Theme.text-muted; }
-                            Text { text: "Migrasi otomatis dari v0.1.2"; font-size: 11px; font-weight: 600; color: Theme.primary; }
+                            Text { text: "Status:"; font-size: 11px; color: Theme.text-muted; }
+                            Text { text: "Siap Digunakan (v0.2.0)"; font-size: 11px; font-weight: 600; color: Theme.primary; }
                         }
                     }
                 }
@@ -1110,7 +1112,7 @@ export component AppWindow inherits Window {
                             color: Theme.emerald;
                         }
                         Text {
-                            text: root.update-status-text != "" ? root.update-status-text : "Aplikasi menggunakan rilis resmi v0.2.0.";
+                            text: root.update-status-text != "" ? root.update-status-text : "Aplikasi menggunakan versi terbaru (v0.2.0).";
                             font-size: 11px;
                             color: Theme.text-main;
                         }

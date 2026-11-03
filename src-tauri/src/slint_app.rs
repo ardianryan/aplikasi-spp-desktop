@@ -134,7 +134,7 @@ fn check_updates_background(app_weak: slint::Weak<AppWindow>) {
                     _ => {
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(app) = app_weak.upgrade() {
-                                app.set_update_status_text("Versi resmi v0.2.0 (Arsitektur Native Offline).".into());
+                                app.set_update_status_text("Aplikasi menggunakan versi terbaru (v0.2.0).".into());
                             }
                         });
                     }
@@ -144,8 +144,20 @@ fn check_updates_background(app_weak: slint::Weak<AppWindow>) {
     });
 }
 
+fn get_ipc_socket_path() -> std::path::PathBuf {
+    let base_dir = dirs::data_dir().unwrap_or_else(std::env::temp_dir);
+    let app_dir = base_dir.join("me.ppti.partisipasi-sekolah");
+    let _ = std::fs::create_dir_all(&app_dir);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&app_dir, std::fs::Permissions::from_mode(0o700));
+    }
+    app_dir.join("ipc.sock")
+}
+
 pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
-    println!("[INFO] Menjalankan Partisipasi Sekolah Desktop v0.2.0 (100% Native Rust & Slint UI)...");
+    println!("[INFO] Menjalankan Partisipasi Sekolah Desktop v0.2.0...");
 
     // Deteksi argumen baris perintah untuk deep-linking (partisipasi-sekolah://)
     let args: Vec<String> = std::env::args().collect();
@@ -154,8 +166,8 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
     // Pastikan single-instance: jika aplikasi sudah berjalan, alihkan fokus/deep-link lalu keluar
     #[cfg(unix)]
     {
-        let socket_path = "/tmp/partisipasi_desktop_ipc.sock";
-        if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(socket_path) {
+        let socket_path = get_ipc_socket_path();
+        if let Ok(mut stream) = std::os::unix::net::UnixStream::connect(&socket_path) {
             use std::io::Write;
             let msg = if let Some(ref url) = maybe_deep_link {
                 url.clone()
@@ -322,9 +334,11 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
     // Setup Local Socket IPC Server untuk menerima deep-link saat aplikasi berjalan
     #[cfg(unix)]
     {
-        let socket_path = "/tmp/partisipasi_desktop_ipc.sock";
-        let _ = std::fs::remove_file(socket_path);
-        if let Ok(listener) = std::os::unix::net::UnixListener::bind(socket_path) {
+        let socket_path = get_ipc_socket_path();
+        let _ = std::fs::remove_file(&socket_path);
+        if let Ok(listener) = std::os::unix::net::UnixListener::bind(&socket_path) {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&socket_path, std::fs::Permissions::from_mode(0o600));
             let app_weak_ipc = app.as_weak();
             let conn_arc_ipc = Arc::clone(&conn_arc);
             let state_ipc = Arc::clone(&state);
@@ -1717,7 +1731,8 @@ fn populate_receipt_modal(
          JOIN payment_assignments a ON d.payment_assignment_id = a.id
          JOIN payment_types t ON a.payment_type_id = t.id
          LEFT JOIN academic_years y ON a.academic_year_id = y.id
-         WHERE d.payment_id = ?1;"
+         WHERE d.payment_id = ?1
+         ORDER BY COALESCE(y.name, '') ASC, (CASE WHEN a.month IS NULL THEN 999 WHEN a.month >= 7 THEN a.month - 6 ELSE a.month + 6 END) ASC, t.name ASC;"
     ).map_err(|e| e.to_string())?;
 
     let items_raw: Vec<(String, Option<i32>, f64, Option<String>)> = stmt.query_map([&payment_id], |row| {
@@ -1827,7 +1842,8 @@ fn send_receipt_to_printer(conn: &Connection, trx_code: &str, cashier_name: &str
          JOIN payment_assignments a ON d.payment_assignment_id = a.id
          JOIN payment_types t ON a.payment_type_id = t.id
          LEFT JOIN academic_years y ON a.academic_year_id = y.id
-         WHERE d.payment_id = ?1;"
+         WHERE d.payment_id = ?1
+         ORDER BY COALESCE(y.name, '') ASC, (CASE WHEN a.month IS NULL THEN 999 WHEN a.month >= 7 THEN a.month - 6 ELSE a.month + 6 END) ASC, t.name ASC;"
     ).map_err(|e| e.to_string())?;
 
     let month_name = |m: i32| -> &'static str {
@@ -1887,10 +1903,11 @@ fn send_receipt_to_printer(conn: &Connection, trx_code: &str, cashier_name: &str
     txt.push_str(&format!("{:^40}\n", "Bukti Pembayaran yang Sah"));
     txt.push_str("\n\n\n\n\x1b\x69"); // Feed and Paper cut command
 
-    let tmp_path = std::env::temp_dir().join(format!("kwitansi_{}.txt", trx_code));
+    let safe_trx_code: String = trx_code.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+    let tmp_path = std::env::temp_dir().join(format!("kwitansi_{}.txt", safe_trx_code));
     std::fs::write(&tmp_path, txt).map_err(|e| format!("Gagal buat spooler kwitansi: {}", e))?;
 
-    // Jalankan adapter pencetakan native CUPS (lpr) langsung tanpa membuka web browser
+    // Jalankan adapter pencetakan CUPS (lpr) langsung tanpa membuka web browser
     #[cfg(unix)]
     {
         let printer = get_cups_printer();
@@ -1900,6 +1917,7 @@ fn send_receipt_to_printer(conn: &Connection, trx_code: &str, cashier_name: &str
         }
         cmd.arg(&tmp_path);
         let output = cmd.output().map_err(|e| format!("Perintah lpr gagal: {}", e))?;
+        let _ = std::fs::remove_file(&tmp_path);
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
@@ -2091,7 +2109,7 @@ fn load_student_details_ui(
              JOIN payment_types t ON a.payment_type_id = t.id
              LEFT JOIN academic_years y ON a.academic_year_id = y.id
              WHERE a.student_id = ?1
-             ORDER BY COALESCE(y.name, '0000') DESC, t.name ASC, a.month ASC;"
+             ORDER BY COALESCE(y.name, '0000') DESC, t.type ASC, (CASE WHEN a.month IS NULL THEN 999 WHEN a.month >= 7 THEN a.month - 6 ELSE a.month + 6 END) ASC, t.name ASC;"
         ) {
             if let Ok(rows) = stmt.query_map([student_id], |row| {
                 let id: String = row.get(0)?;

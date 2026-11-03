@@ -48,6 +48,11 @@ pub fn init_db_standalone() -> Result<Connection, String> {
 
     fs::create_dir_all(&db_path)
         .map_err(|e| format!("Gagal membuat direktori data: {}", e))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&db_path, fs::Permissions::from_mode(0o700));
+    }
 
     db_path.push("partisipasi.db");
     println!("Database path (standalone): {:?}", db_path);
@@ -93,6 +98,11 @@ pub fn init_db(app_handle: &AppHandle) -> Result<Connection, String> {
     // Create directory if it doesn't exist
     fs::create_dir_all(&db_path)
         .map_err(|e| format!("Gagal membuat direktori data: {}", e))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&db_path, fs::Permissions::from_mode(0o700));
+    }
     
     db_path.push("partisipasi.db");
     println!("Database path: {:?}", db_path);
