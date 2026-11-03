@@ -353,11 +353,16 @@ export component SyncView inherits Rectangle {
                     HorizontalLayout {
                         alignment: center;
                         spacing: 8px;
-                        Image {
-                            source: @image-url("../assets/icons/sync.svg");
+                        VerticalLayout {
+                            alignment: center;
                             width: 14px;
-                            height: 14px;
-                            image-fit: contain;
+                            Image {
+                                source: @image-url("../assets/icons/sync.svg");
+                                width: 14px;
+                                height: 14px;
+                                image-fit: contain;
+                                colorize: white;
+                            }
                         }
                         Text {
                             text: root.is-syncing ? "Sinkronisasi..." : "Sinkronisasikan Sekarang";

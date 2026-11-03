@@ -682,8 +682,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     if let Ok(conn) = conn_arc.lock() {
                         let _ = populate_receipt_modal(&app, &conn, &tx_code, &cashier_nama);
                     }
-                    app.set_sync_toast_message(format!("Pembayaran {} berhasil!", tx_code).into());
-                    app.set_sync_toast_is_error(false);
+                    show_toast(&app, &format!("Pembayaran {} berhasil!", tx_code), false);
                 }
             }
         });
@@ -718,22 +717,19 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                         Err("Gagal membuat runtime async".into())
                     };
 
-                    let app_weak3 = app_weak2.clone();
                     let _ = slint::invoke_from_event_loop(move || {
                         if let Some(app) = app_weak2.upgrade() {
                             app.set_is_syncing(false);
                             match &result_msg {
                                 Ok(msg) => {
                                     app.set_sync_message(msg.clone().into());
-                                    app.set_sync_toast_message("Sinkronisasi Berhasil! Data lokal telah diperbarui.".into());
-                                    app.set_sync_toast_is_error(false);
+                                    show_toast(&app, "Sinkronisasi Berhasil! Data lokal telah diperbarui.", false);
                                     app.set_is_online(true);
                                     println!("[INFO] Sinkronisasi Berhasil: {}", msg);
                                 }
                                 Err(err) => {
                                     app.set_sync_message(format!("Sync offline: {}", err).into());
-                                    app.set_sync_toast_message(format!("Gagal Sinkron: {}", err).into());
-                                    app.set_sync_toast_is_error(true);
+                                    show_toast(&app, &format!("Gagal Sinkron: {}", err), true);
                                     println!("[WARN] Sinkronisasi Gagal: {}", err);
                                 }
                             }
@@ -743,16 +739,6 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                             refresh_sync_status_ui(&app, &conn_arc2);
                             refresh_today_payments_ui(&app, &conn_arc2);
                             refresh_history_tab_ui(&app, &conn_arc2, "");
-
-                            // Auto-hide toast notification after 5 seconds
-                            std::thread::spawn(move || {
-                                std::thread::sleep(std::time::Duration::from_secs(5));
-                                let _ = slint::invoke_from_event_loop(move || {
-                                    if let Some(app) = app_weak3.upgrade() {
-                                        app.set_sync_toast_message("".into());
-                                    }
-                                });
-                            });
                         }
                     });
                 });
@@ -838,12 +824,10 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     let cashier_name = state.lock().unwrap().user_nama.clone();
                     match populate_receipt_modal(&app, &conn, &trx_code, &cashier_name) {
                         Ok(_) => {
-                            app.set_sync_toast_message("Kwitansi siap ditampilkan.".into());
-                            app.set_sync_toast_is_error(false);
+                            show_toast(&app, "Kwitansi siap ditampilkan.", false);
                         }
                         Err(e) => {
-                            app.set_sync_toast_message(format!("Gagal memuat kwitansi: {}", e).into());
-                            app.set_sync_toast_is_error(true);
+                            show_toast(&app, &format!("Gagal memuat kwitansi: {}", e), true);
                         }
                     }
                 }
@@ -874,12 +858,10 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     let cashier_name = state.lock().unwrap().user_nama.clone();
                     match send_receipt_to_printer(&conn, &trx_code, &cashier_name) {
                         Ok(_) => {
-                            app.set_sync_toast_message("Kwitansi berhasil dikirim ke printer kasir.".into());
-                            app.set_sync_toast_is_error(false);
+                            show_toast(&app, "Kwitansi berhasil dikirim ke printer kasir.", false);
                         }
                         Err(e) => {
-                            app.set_sync_toast_message(format!("Info Cetak: {}", e).into());
-                            app.set_sync_toast_is_error(true);
+                            show_toast(&app, &format!("Info Cetak: {}", e), true);
                         }
                     }
                 }
@@ -1154,8 +1136,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(app) = app_weak.upgrade() {
                 app.set_sync_base_url(clean_url.clone().into());
                 app.set_api_endpoint_url(clean_url.into());
-                app.set_sync_toast_message("Pengaturan sambungan peladen berhasil disimpan.".into());
-                app.set_sync_toast_is_error(false);
+                show_toast(&app, "Pengaturan sambungan peladen berhasil disimpan.", false);
                 refresh_sync_status_ui(&app, &conn_arc);
             }
         });
@@ -1171,8 +1152,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
             if raw_url.is_empty() {
                 if let Some(app) = app_weak.upgrade() {
                     app.set_test_connection_result("URL server tidak boleh kosong.".into());
-                    app.set_sync_toast_message("URL server tidak boleh kosong.".into());
-                    app.set_sync_toast_is_error(true);
+                    show_toast(&app, "URL server tidak boleh kosong.", true);
                 }
                 return;
             }
@@ -1238,14 +1218,12 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                         match res {
                             Ok(msg) => {
                                 app.set_test_connection_result(format!("Koneksi berhasil! {}", msg).into());
-                                app.set_sync_toast_message("Server terhubung dengan baik.".into());
-                                app.set_sync_toast_is_error(false);
+                                show_toast(&app, "Server terhubung dengan baik.", false);
                                 app.set_is_online(true);
                             }
                             Err(e) => {
                                 app.set_test_connection_result(format!("Koneksi gagal: {}", e).into());
-                                app.set_sync_toast_message(format!("Koneksi gagal: {}", e).into());
-                                app.set_sync_toast_is_error(true);
+                                show_toast(&app, &format!("Koneksi gagal: {}", e), true);
                                 app.set_is_online(false);
                             }
                         }
@@ -1272,8 +1250,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                 } else {
                     "Jalankan otomatis saat startup dinonaktifkan."
                 };
-                app.set_sync_toast_message(msg.into());
-                app.set_sync_toast_is_error(false);
+                show_toast(&app, msg, false);
             }
         });
     }
@@ -1365,8 +1342,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                 app.set_api_endpoint_url(clean_url.clone().into());
                 app.set_sync_base_url(clean_url.into());
                 app.set_is_fresh_install(false);
-                app.set_sync_toast_message("Konfigurasi awal berhasil diselesaikan!".into());
-                app.set_sync_toast_is_error(false);
+                show_toast(&app, "Konfigurasi awal berhasil diselesaikan!", false);
                 refresh_sync_status_ui(&app, &conn_arc);
             }
         });
@@ -1574,6 +1550,108 @@ fn load_and_cache_school_logo(conn: &Connection) -> Option<std::path::PathBuf> {
     }
 }
 
+fn load_and_cache_stamp_image(conn: &Connection) -> Option<std::path::PathBuf> {
+    let stamp_data: String = conn.query_row(
+        "SELECT value FROM settings WHERE key = 'stamp_image' AND value != '' LIMIT 1;",
+        [],
+        |r| r.get(0)
+    ).unwrap_or_default();
+
+    let cache_dir = dirs::data_dir()
+        .unwrap_or_else(|| std::env::temp_dir())
+        .join("me.ppti.partisipasi-sekolah");
+    let _ = std::fs::create_dir_all(&cache_dir);
+    let stamp_file = cache_dir.join("cached_stamp_image.png");
+
+    if !stamp_data.is_empty() {
+        if let Some(pos) = stamp_data.find("base64,") {
+            let b64_str = &stamp_data[pos + 7..];
+            if let Some(bytes) = base64_decode(b64_str) {
+                let _ = std::fs::write(&stamp_file, &bytes);
+                return Some(stamp_file);
+            }
+        }
+    }
+
+    if stamp_file.exists() {
+        Some(stamp_file)
+    } else {
+        None
+    }
+}
+
+fn format_indo_date(date_str: &str) -> String {
+    let date_part = date_str.split(' ').next().unwrap_or(date_str);
+    let parts: Vec<&str> = date_part.split('-').collect();
+    if parts.len() == 3 {
+        let day = parts[2];
+        let month = match parts[1] {
+            "01" => "Januari",
+            "02" => "Februari",
+            "03" => "Maret",
+            "04" => "April",
+            "05" => "Mei",
+            "06" => "Juni",
+            "07" => "Juli",
+            "08" => "Agustus",
+            "09" => "September",
+            "10" => "Oktober",
+            "11" => "November",
+            "12" => "Desember",
+            _ => parts[1],
+        };
+        let year = parts[0];
+        format!("{} {} {}", day, month, year)
+    } else {
+        date_str.to_string()
+    }
+}
+
+fn show_toast(app: &AppWindow, message: &str, is_error: bool) {
+    let msg = message.to_string();
+    app.set_sync_toast_message(msg.clone().into());
+    app.set_sync_toast_is_error(is_error);
+
+    let app_weak = app.as_weak();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(6));
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(app) = app_weak.upgrade() {
+                if app.get_sync_toast_message().to_string() == msg {
+                    app.set_sync_toast_message("".into());
+                }
+            }
+        });
+    });
+}
+
+#[cfg(unix)]
+fn get_cups_printer() -> Option<String> {
+    // 1. Coba deteksi printer default sistem
+    if let Ok(output) = std::process::Command::new("lpstat").arg("-d").output() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if let Some(pos) = stdout.find(':') {
+            let dest = stdout[pos + 1..].trim();
+            if !dest.is_empty() && !dest.contains("no system default") && !dest.contains("No destinations") {
+                return Some(dest.to_string());
+            }
+        }
+    }
+    // 2. Coba deteksi printer aktif pertama
+    if let Ok(output) = std::process::Command::new("lpstat").arg("-p").output() {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if line.starts_with("printer ") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    return Some(parts[1].to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 fn update_branding_and_settings(app: &AppWindow, conn: &Connection) {
     let school_name: String = conn.query_row(
         "SELECT value FROM settings WHERE key = 'school_name';",
@@ -1680,10 +1758,25 @@ fn populate_receipt_modal(
 
     let school_name: String = conn.query_row("SELECT value FROM settings WHERE key = 'school_name';", [], |r| r.get(0)).unwrap_or_else(|_| "Nama Sekolah".into());
     let school_address: String = conn.query_row("SELECT value FROM settings WHERE key = 'school_address';", [], |r| r.get(0)).unwrap_or_else(|_| "Alamat Sekolah".into());
+    let committee_name: String = conn.query_row("SELECT value FROM settings WHERE key = 'committee_name';", [], |r| r.get(0)).unwrap_or_default();
+    let receipt_date = format!("Mojokerto, {}", format_indo_date(&created_at));
+
+    let mut has_stamp = false;
+    if let Some(stamp_path) = load_and_cache_stamp_image(conn) {
+        if let Ok(img) = slint::Image::load_from_path(&stamp_path) {
+            app.set_has_receipt_stamp(true);
+            app.set_receipt_stamp_image(img);
+            has_stamp = true;
+        }
+    }
+    if !has_stamp {
+        app.set_has_receipt_stamp(false);
+    }
 
     app.set_receipt_modal_data(ReceiptModalData {
         transaction_code: trx_code.into(),
         created_at: created_at.into(),
+        receipt_date: receipt_date.into(),
         student_name: student_nama.into(),
         student_nis: student_nis.unwrap_or_else(|| "-".into()).into(),
         student_class: student_kelas.into(),
@@ -1691,8 +1784,10 @@ fn populate_receipt_modal(
         total_amount: format_idr(total_amount).into(),
         cashier_name: if cashier_name.is_empty() { "Petugas Kasir".into() } else { cashier_name.into() },
         notes: notes.unwrap_or_default().into(),
+        committee_name: committee_name.into(),
         school_name: school_name.into(),
         school_address: school_address.into(),
+        has_stamp,
     });
     app.set_receipt_modal_items(Rc::new(VecModel::from(modal_items)).into());
     app.set_show_receipt_modal(true);
@@ -1798,13 +1893,19 @@ fn send_receipt_to_printer(conn: &Connection, trx_code: &str, cashier_name: &str
     // Jalankan adapter pencetakan native CUPS (lpr) langsung tanpa membuka web browser
     #[cfg(unix)]
     {
-        let output = std::process::Command::new("lpr")
-            .arg(&tmp_path)
-            .output()
-            .map_err(|e| format!("Perintah lpr gagal: {}", e))?;
+        let printer = get_cups_printer();
+        let mut cmd = std::process::Command::new("lpr");
+        if let Some(ref p) = printer {
+            cmd.arg("-P").arg(p);
+        }
+        cmd.arg(&tmp_path);
+        let output = cmd.output().map_err(|e| format!("Perintah lpr gagal: {}", e))?;
 
         if !output.status.success() {
             let err_msg = String::from_utf8_lossy(&output.stderr);
+            if err_msg.contains("No default destination") || err_msg.contains("no destination") || err_msg.contains("no system default") {
+                return Err("Printer kasir belum terpasang di sistem operasi. Sambungkan printer kasir USB/LAN atau atur printer default di sistem.".to_string());
+            }
             return Err(format!("Adapter printer CUPS: {}", err_msg.trim()));
         }
     }
@@ -2471,8 +2572,7 @@ fn process_deep_link_url(
         if !nama.is_empty() { app.set_user_name(nama.clone().into()); }
         if !role.is_empty() { app.set_user_role(role.into()); }
         app.set_is_logged_in(true);
-        app.set_sync_toast_message(format!("Otorisasi web berhasil! Selamat datang, {}.", nama).into());
-        app.set_sync_toast_is_error(false);
+        show_toast(app, &format!("Otorisasi web berhasil! Selamat datang, {}.", nama), false);
         refresh_sync_status_ui(app, conn_arc);
     } else if !code.is_empty() {
         let app_weak = app.as_weak();
@@ -2505,8 +2605,7 @@ fn process_deep_link_url(
                             app.set_user_name(exchange.user.nama.into());
                             app.set_user_role(exchange.user.role.into());
                             app.set_is_logged_in(true);
-                            app.set_sync_toast_message("Otorisasi kode peramban berhasil!".into());
-                            app.set_sync_toast_is_error(false);
+                            show_toast(&app, "Otorisasi kode peramban berhasil!", false);
                             refresh_sync_status_ui(&app, &conn_arc_cl);
                         }
                     });

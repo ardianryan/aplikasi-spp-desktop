@@ -27,6 +27,7 @@ export struct ReceiptModalItem {
 export struct ReceiptModalData {
     transaction_code: string,
     created_at: string,
+    receipt_date: string,
     student_name: string,
     student_nis: string,
     student_class: string,
@@ -34,8 +35,10 @@ export struct ReceiptModalData {
     total_amount: string,
     cashier_name: string,
     notes: string,
+    committee_name: string,
     school_name: string,
     school_address: string,
+    has_stamp: bool,
 }
 
 export component AppWindow inherits Window {
@@ -120,7 +123,7 @@ export component AppWindow inherits Window {
     in property <string> sync-message: "";
     in property <bool> is-testing-connection: false;
     in property <string> test-connection-result: "";
-    in property <string> sync-toast-message: "";
+    in-out property <string> sync-toast-message: "";
     in property <bool> sync-toast-is-error: false;
     in-out property <bool> autostart-enabled: false;
 
@@ -139,6 +142,8 @@ export component AppWindow inherits Window {
     in-out property <bool> show-receipt-modal: false;
     in property <ReceiptModalData> receipt-modal-data;
     in property <[ReceiptModalItem]> receipt-modal-items: [];
+    in property <bool> has-receipt-stamp: false;
+    in property <image> receipt-stamp-image;
 
     // Callbacks to Rust Controller
     callback tab-changed(int);
@@ -329,9 +334,9 @@ export component AppWindow inherits Window {
                     drop-shadow-color: #00000018;
 
                     HorizontalLayout {
-                        padding-left: 18px;
-                        padding-right: 18px;
-                        spacing: 8px;
+                        padding-left: 16px;
+                        padding-right: 12px;
+                        spacing: 10px;
                         alignment: center;
 
                         VerticalLayout {
@@ -352,6 +357,32 @@ export component AppWindow inherits Window {
                             font-weight: 700;
                             color: root.sync-toast-is-error ? #b91c1c : #047857;
                             vertical-alignment: center;
+                        }
+
+                        // Tombol Silang / Dismiss Banner
+                        VerticalLayout {
+                            alignment: center;
+                            width: 20px;
+                            Rectangle {
+                                width: 20px;
+                                height: 20px;
+                                border-radius: 10px;
+                                background: touch-toast-dismiss.has-hover ? (root.sync-toast-is-error ? #fee2e2 : #d1fae5) : transparent;
+                                animate background { duration: 150ms; }
+                                touch-toast-dismiss := TouchArea {
+                                    clicked => { root.sync-toast-message = ""; }
+                                    mouse-cursor: pointer;
+                                }
+                                Image {
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: @image-url("assets/icons/close.svg");
+                                    width: 9px;
+                                    height: 9px;
+                                    image-fit: contain;
+                                    colorize: root.sync-toast-is-error ? #b91c1c : #047857;
+                                }
+                            }
                         }
                     }
                 }
@@ -541,16 +572,16 @@ export component AppWindow inherits Window {
         Rectangle {
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
-            width: 520px;
-            height: 580px;
+            width: 540px;
+            height: 640px;
             background: #ffffff;
             border-radius: 12px;
             drop-shadow-blur: 24px;
             drop-shadow-color: #00000040;
 
             VerticalLayout {
-                padding: 18px;
-                spacing: 12px;
+                padding: 16px;
+                spacing: 10px;
 
                 // Modal Header
                 HorizontalLayout {
@@ -588,130 +619,232 @@ export component AppWindow inherits Window {
 
                 Rectangle { height: 1px; background: Theme.border; }
 
-                // Printable Receipt Box Area
+                // Printable Receipt Box Area (1:1 Sesuai Layout Web Kwitansi)
                 Rectangle {
                     vertical-stretch: 1;
-                    background: #f8fafc;
-                    border-color: Theme.border;
+                    background: #ffffff;
+                    border-color: #cbd5e1;
                     border-width: 1px;
                     border-radius: 8px;
 
                     VerticalLayout {
-                        padding: 14px;
-                        spacing: 8px;
+                        padding: 12px;
+                        spacing: 6px;
 
-                        // Kop Sekolah
+                        // Kop Sekolah / Komite
                         HorizontalLayout {
-                            spacing: 10px;
-                            alignment: start;
+                            spacing: 8px;
+                            alignment: center;
                             if root.has-school-logo: Image {
                                 source: root.school-logo;
-                                width: 40px;
-                                height: 40px;
+                                width: 44px;
+                                height: 44px;
                                 image-fit: contain;
+                            }
+                            if !root.has-school-logo: Rectangle {
+                                width: 44px;
+                                height: 44px;
                             }
                             VerticalLayout {
                                 horizontal-stretch: 1;
                                 spacing: 2px;
+                                if root.receipt-modal-data.committee_name != "": Text {
+                                    text: root.receipt-modal-data.committee_name;
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    color: #1e293b;
+                                    horizontal-alignment: center;
+                                }
                                 Text {
                                     text: root.receipt-modal-data.school_name;
-                                    font-size: 13px;
+                                    font-size: 14px;
                                     font-weight: 800;
-                                    color: Theme.primary;
+                                    color: #0f172a;
+                                    horizontal-alignment: center;
                                 }
                                 Text {
                                     text: root.receipt-modal-data.school_address;
                                     font-size: 10px;
-                                    color: Theme.text-muted;
+                                    color: #64748b;
+                                    horizontal-alignment: center;
                                 }
+                            }
+                            Rectangle {
+                                width: 44px;
+                                height: 44px;
                             }
                         }
 
-                        Rectangle { height: 1px; background: #cbd5e1; }
+                        // Garis Ganda Kop Surat
+                        VerticalLayout {
+                            spacing: 2px;
+                            Rectangle { height: 1px; background: #0f172a; }
+                            Rectangle { height: 2px; background: #0f172a; }
+                        }
 
-                        // Meta Transaksi
+                        // Judul Dokumen Kwitansi
+                        Text {
+                            text: "KWITANSI PEMBAYARAN";
+                            font-size: 12px;
+                            font-weight: 800;
+                            letter-spacing: 1px;
+                            color: #0f172a;
+                            horizontal-alignment: center;
+                        }
+
+                        // Meta Informasi Transaksi 2 Kolom
                         HorizontalLayout {
                             spacing: 14px;
                             VerticalLayout {
                                 horizontal-stretch: 1;
                                 spacing: 2px;
-                                Text { text: "No. Transaksi : " + root.receipt-modal-data.transaction_code; font-size: 11px; font-weight: 700; color: Theme.text-main; }
-                                Text { text: "Nama Siswa   : " + root.receipt-modal-data.student_name; font-size: 11px; color: Theme.text-main; }
-                                Text { text: "Kelas        : " + root.receipt-modal-data.student_class; font-size: 11px; color: Theme.text-muted; }
+                                HorizontalLayout {
+                                    Text { width: 85px; text: "No. Transaksi"; font-size: 10px; font-weight: 600; color: #475569; }
+                                    Text { text: ": " + root.receipt-modal-data.transaction_code; font-size: 10px; font-weight: 700; color: #0f172a; }
+                                }
+                                HorizontalLayout {
+                                    Text { width: 85px; text: "Nama Siswa"; font-size: 10px; font-weight: 600; color: #475569; }
+                                    Text { text: ": " + root.receipt-modal-data.student_name; font-size: 10px; font-weight: 700; color: #0f172a; }
+                                }
+                                HorizontalLayout {
+                                    Text { width: 85px; text: "Kelas"; font-size: 10px; font-weight: 600; color: #475569; }
+                                    Text { text: ": " + root.receipt-modal-data.student_class; font-size: 10px; color: #334155; }
+                                }
                             }
                             VerticalLayout {
                                 horizontal-stretch: 1;
                                 spacing: 2px;
-                                Text { text: "Tanggal : " + root.receipt-modal-data.created_at; font-size: 11px; color: Theme.text-muted; }
-                                Text { text: "NIS     : " + root.receipt-modal-data.student_nis; font-size: 11px; color: Theme.text-muted; }
-                                Text { text: "Metode  : " + root.receipt-modal-data.payment_method; font-size: 11px; font-weight: 700; color: Theme.emerald; }
+                                HorizontalLayout {
+                                    Text { width: 60px; text: "Tanggal"; font-size: 10px; font-weight: 600; color: #475569; }
+                                    Text { text: ": " + root.receipt-modal-data.created_at; font-size: 10px; color: #334155; }
+                                }
+                                HorizontalLayout {
+                                    Text { width: 60px; text: "NIS"; font-size: 10px; font-weight: 600; color: #475569; }
+                                    Text { text: ": " + root.receipt-modal-data.student_nis; font-size: 10px; color: #334155; }
+                                }
+                                HorizontalLayout {
+                                    Text { width: 60px; text: "Metode"; font-size: 10px; font-weight: 600; color: #475569; }
+                                    Text { text: ": " + root.receipt-modal-data.payment_method; font-size: 10px; font-weight: 700; color: #059669; }
+                                }
                             }
                         }
 
-                        Rectangle { height: 1px; background: #cbd5e1; }
-
-                        // Rincian Pembayaran Header
+                        // Tabel Pos Bayar Header
                         Rectangle {
                             height: 24px;
-                            background: #e2e8f0;
+                            background: #f1f5f9;
+                            border-color: #cbd5e1;
+                            border-width: 1px;
                             border-radius: 4px;
                             HorizontalLayout {
                                 padding-left: 8px;
                                 padding-right: 8px;
-                                Text { width: 28px; text: "No"; font-size: 10px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
-                                Text { horizontal-stretch: 1; text: "Keterangan Pos Bayar"; font-size: 10px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
-                                Text { width: 110px; text: "Jumlah"; font-size: 10px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
+                                Text { width: 28px; text: "No"; font-size: 10px; font-weight: 700; color: #334155; vertical-alignment: center; }
+                                Text { horizontal-stretch: 1; text: "Keterangan Pembayaran"; font-size: 10px; font-weight: 700; color: #334155; vertical-alignment: center; }
+                                Text { width: 110px; text: "Jumlah"; font-size: 10px; font-weight: 700; color: #334155; horizontal-alignment: right; vertical-alignment: center; }
                             }
                         }
 
+                        // Daftar Baris Pembayaran
                         Flickable {
                             vertical-stretch: 1;
                             VerticalLayout {
                                 alignment: start;
-                                spacing: 3px;
-                                for itm in root.receipt-modal-items: Rectangle {
-                                    height: 24px;
-                                    HorizontalLayout {
-                                        padding-left: 8px;
-                                        padding-right: 8px;
-                                        Text { width: 28px; text: itm.index; font-size: 11px; color: Theme.text-muted; vertical-alignment: center; }
-                                        Text { horizontal-stretch: 1; text: itm.description; font-size: 11px; font-weight: 600; color: Theme.text-main; vertical-alignment: center; }
-                                        Text { width: 110px; text: itm.amount; font-size: 11px; font-weight: 700; color: Theme.primary; horizontal-alignment: right; vertical-alignment: center; }
+                                spacing: 2px;
+                                for itm in root.receipt-modal-items: VerticalLayout {
+                                    spacing: 0px;
+                                    Rectangle {
+                                        height: 22px;
+                                        HorizontalLayout {
+                                            padding-left: 8px;
+                                            padding-right: 8px;
+                                            Text { width: 28px; text: itm.index; font-size: 10px; color: #64748b; vertical-alignment: center; }
+                                            Text { horizontal-stretch: 1; text: itm.description; font-size: 10px; font-weight: 600; color: #0f172a; vertical-alignment: center; }
+                                            Text { width: 110px; text: itm.amount; font-size: 10px; font-weight: 700; color: #1e3a8a; horizontal-alignment: right; vertical-alignment: center; }
+                                        }
+                                    }
+                                    Rectangle { height: 1px; background: #f1f5f9; }
+                                }
+                            }
+                        }
+
+                        // Total Pembayaran Row
+                        Rectangle {
+                            height: 28px;
+                            background: #f8fafc;
+                            border-color: #cbd5e1;
+                            border-width: 1px;
+                            border-radius: 4px;
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                alignment: space-between;
+                                Text { text: "Total Pembayaran"; font-size: 11px; font-weight: 800; color: #0f172a; vertical-alignment: center; }
+                                Text { text: root.receipt-modal-data.total_amount; font-size: 12px; font-weight: 800; color: #1e3a8a; vertical-alignment: center; }
+                            }
+                        }
+
+                        // Catatan (bila ada)
+                        if root.receipt-modal-data.notes != "": Text {
+                            text: "Catatan: " + root.receipt-modal-data.notes;
+                            font-size: 9px;
+                            color: #64748b;
+                        }
+
+                        // Tanda Tangan & Stempel Petugas (Kanan Bawah)
+                        HorizontalLayout {
+                            alignment: end;
+                            Rectangle {
+                                width: 200px;
+                                height: 86px;
+                                VerticalLayout {
+                                    alignment: space-between;
+                                    Text {
+                                        text: root.receipt-modal-data.receipt_date;
+                                        font-size: 10px;
+                                        color: #334155;
+                                        horizontal-alignment: center;
+                                    }
+                                    Text {
+                                        text: "Petugas Penerima,";
+                                        font-size: 10px;
+                                        font-weight: 700;
+                                        color: #0f172a;
+                                        horizontal-alignment: center;
+                                    }
+                                    Rectangle {
+                                        height: 30px;
+                                        if root.has-receipt-stamp: Image {
+                                            x: (parent.width - self.width) / 2 - 20px;
+                                            y: -8px;
+                                            source: root.receipt-stamp-image;
+                                            width: 66px;
+                                            height: 66px;
+                                            image-fit: contain;
+                                            opacity: 0.85;
+                                        }
+                                    }
+                                    VerticalLayout {
+                                        spacing: 2px;
+                                        Rectangle { height: 1px; background: #334155; }
+                                        Text {
+                                            text: root.receipt-modal-data.cashier_name;
+                                            font-size: 10px;
+                                            font-weight: 700;
+                                            color: #0f172a;
+                                            horizontal-alignment: center;
+                                        }
                                     }
                                 }
                             }
                         }
 
-                        // Total Row
-                        Rectangle {
-                            height: 34px;
-                            background: #e0f2fe;
-                            border-radius: 6px;
-                            HorizontalLayout {
-                                padding-left: 12px;
-                                padding-right: 12px;
-                                alignment: space-between;
-                                Text { text: "TOTAL PEMBAYARAN"; font-size: 11px; font-weight: 800; color: Theme.primary; vertical-alignment: center; }
-                                Text { text: root.receipt-modal-data.total_amount; font-size: 14px; font-weight: 800; color: Theme.primary; vertical-alignment: center; }
-                            }
-                        }
-
-                        // Catatan & Petugas
-                        HorizontalLayout {
-                            alignment: space-between;
-                            Text {
-                                text: root.receipt-modal-data.notes != "" ? "Catatan: " + root.receipt-modal-data.notes : "Bukti pembayaran kasir yang sah";
-                                font-size: 10px;
-                                color: Theme.text-muted;
-                                vertical-alignment: center;
-                            }
-                            Text {
-                                text: "Kasir: " + root.receipt-modal-data.cashier_name;
-                                font-size: 11px;
-                                font-weight: 700;
-                                color: Theme.text-main;
-                                vertical-alignment: center;
-                            }
+                        // Footer Bukti Sah
+                        Text {
+                            text: "Kwitansi ini merupakan bukti pembayaran yang sah • Dicetak oleh Sistem Kasir Partisipasi Sekolah";
+                            font-size: 8px;
+                            color: #94a3b8;
+                            horizontal-alignment: center;
                         }
                     }
                 }
@@ -754,12 +887,16 @@ export component AppWindow inherits Window {
                         HorizontalLayout {
                             alignment: center;
                             spacing: 6px;
-                            Image {
-                                source: @image-url("assets/icons/print.svg");
+                            VerticalLayout {
+                                alignment: center;
                                 width: 13px;
-                                height: 13px;
-                                image-fit: contain;
-                                colorize: white;
+                                Image {
+                                    source: @image-url("assets/icons/print.svg");
+                                    width: 13px;
+                                    height: 13px;
+                                    image-fit: contain;
+                                    colorize: white;
+                                }
                             }
                             Text {
                                 text: "Cetak ke Printer";
@@ -998,12 +1135,16 @@ export component AppWindow inherits Window {
                         HorizontalLayout {
                             alignment: center;
                             spacing: 6px;
-                            Image {
-                                source: @image-url("assets/icons/sync.svg");
+                            VerticalLayout {
+                                alignment: center;
                                 width: 13px;
-                                height: 13px;
-                                image-fit: contain;
-                                colorize: Theme.primary;
+                                Image {
+                                    source: @image-url("assets/icons/sync.svg");
+                                    width: 13px;
+                                    height: 13px;
+                                    image-fit: contain;
+                                    colorize: Theme.primary;
+                                }
                             }
                             Text {
                                 text: "Periksa Pembaruan";

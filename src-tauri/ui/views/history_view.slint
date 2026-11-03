@@ -275,12 +275,16 @@ export component HistoryView inherits Rectangle {
                                         HorizontalLayout {
                                             alignment: center;
                                             spacing: 5px;
-                                            Image {
-                                                source: @image-url("../assets/icons/print.svg");
+                                            VerticalLayout {
+                                                alignment: center;
                                                 width: 12px;
-                                                height: 12px;
-                                                image-fit: contain;
-                                                colorize: Theme.primary;
+                                                Image {
+                                                    source: @image-url("../assets/icons/print.svg");
+                                                    width: 12px;
+                                                    height: 12px;
+                                                    image-fit: contain;
+                                                    colorize: Theme.primary;
+                                                }
                                             }
                                             Text {
                                                 text: "Cetak";

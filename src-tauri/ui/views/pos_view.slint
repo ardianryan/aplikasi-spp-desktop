@@ -1078,12 +1078,16 @@ export component PosView inherits Rectangle {
                                         HorizontalLayout {
                                             alignment: center;
                                             spacing: 4px;
-                                            Image {
-                                                source: @image-url("../assets/icons/print.svg");
+                                            VerticalLayout {
+                                                alignment: center;
                                                 width: 11px;
-                                                height: 11px;
-                                                image-fit: contain;
-                                                colorize: Theme.primary;
+                                                Image {
+                                                    source: @image-url("../assets/icons/print.svg");
+                                                    width: 11px;
+                                                    height: 11px;
+                                                    image-fit: contain;
+                                                    colorize: Theme.primary;
+                                                }
                                             }
                                             Text {
                                                 text: "Cetak";
