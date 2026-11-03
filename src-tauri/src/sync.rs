@@ -284,32 +284,46 @@ fn get_pending_records(conn: &Connection, table_name: &str) -> Result<Vec<Value>
 // Fungsi async murni untuk mengunduh payload dari server (Tanpa menahan koneksi SQLite)
 pub async fn fetch_pull_payload(api_url: &str, api_key: &str, last_synced: &str) -> Result<Value, String> {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
+        .http1_only()
+        .timeout(std::time::Duration::from_secs(45))
+        .tcp_keepalive(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| format!("Gagal menginisialisasi HTTP client: {}", e))?;
 
     let url = format!("{}/api/v1/sync/pull?since={}", api_url.trim_end_matches('/'), urlencoding::encode(last_synced));
     println!("Pulling data from: {}", url);
 
-    let res = client.get(&url)
-        .header("X-API-Key", api_key)
-        .send()
-        .await
-        .map_err(|e| format!("Koneksi gagal saat pull: {}", e))?;
+    let mut last_err = String::new();
+    for attempt in 1..=2 {
+        match client.get(&url)
+            .header("X-API-Key", api_key)
+            .send()
+            .await 
+        {
+            Ok(res) => {
+                if !res.status().is_success() {
+                    return Err(format!("Server pull mengembalikan status error: {}", res.status()));
+                }
 
-    if !res.status().is_success() {
-        return Err(format!("Server pull mengembalikan status error: {}", res.status()));
+                let payload: Value = res.json()
+                    .await
+                    .map_err(|e| format!("Gagal mem-parsing JSON response pull: {}", e))?;
+
+                if !payload["success"].as_bool().unwrap_or(false) {
+                    return Err(format!("Pull gagal di server: {}", payload["message"].as_str().unwrap_or("Unknown error")));
+                }
+
+                return Ok(payload);
+            }
+            Err(e) => {
+                last_err = format!("{}", e);
+                eprintln!("[WARN] Pull attempt {} gagal: {}. Mencoba ulang...", attempt, e);
+                tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+            }
+        }
     }
 
-    let payload: Value = res.json()
-        .await
-        .map_err(|e| format!("Gagal mem-parsing JSON response pull: {}", e))?;
-
-    if !payload["success"].as_bool().unwrap_or(false) {
-        return Err(format!("Pull gagal di server: {}", payload["message"].as_str().unwrap_or("Unknown error")));
-    }
-
-    Ok(payload)
+    Err(format!("Koneksi gagal saat pull: {}", last_err))
 }
 
 // Fungsi sinkron murni untuk melakukan upsert data payload hasil unduhan ke SQLite
@@ -393,53 +407,67 @@ pub async fn upload_push_payload(
     total_pending: usize,
 ) -> Result<HashMap<String, Vec<String>>, String> {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
+        .http1_only()
+        .timeout(std::time::Duration::from_secs(45))
+        .tcp_keepalive(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| format!("Gagal menginisialisasi HTTP client: {}", e))?;
 
     let url = format!("{}/api/v1/sync/push", api_url.trim_end_matches('/'));
     println!("Pushing data ({}) to: {}", total_pending, url);
 
-    let res = client.post(&url)
-        .header("X-API-Key", api_key)
-        .json(payload_map)
-        .send()
-        .await
-        .map_err(|e| format!("Koneksi gagal saat push: {}", e))?;
+    let mut last_err = String::new();
+    for attempt in 1..=2 {
+        match client.post(&url)
+            .header("X-API-Key", api_key)
+            .json(payload_map)
+            .send()
+            .await
+        {
+            Ok(res) => {
+                if !res.status().is_success() {
+                    return Err(format!("Server push mengembalikan status error: {}", res.status()));
+                }
 
-    if !res.status().is_success() {
-        return Err(format!("Server push mengembalikan status error: {}", res.status()));
-    }
+                let response_json: Value = res.json()
+                    .await
+                    .map_err(|e| format!("Gagal mem-parsing JSON response push: {}", e))?;
 
-    let response_json: Value = res.json()
-        .await
-        .map_err(|e| format!("Gagal mem-parsing JSON response push: {}", e))?;
+                if !response_json["success"].as_bool().unwrap_or(false) {
+                    return Err(format!("Push gagal di server: {}", response_json["message"].as_str().unwrap_or("Unknown error")));
+                }
 
-    if !response_json["success"].as_bool().unwrap_or(false) {
-        return Err(format!("Push gagal di server: {}", response_json["message"].as_str().unwrap_or("Unknown error")));
-    }
+                let mut synced_ids_map = HashMap::new();
+                if let Some(synced_obj) = response_json.get("synced_ids").and_then(|v| v.as_object()) {
+                    for (tbl, ids_val) in synced_obj {
+                        if let Some(ids_arr) = ids_val.as_array() {
+                            let ids: Vec<String> = ids_arr.iter()
+                                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                .collect();
+                            synced_ids_map.insert(tbl.clone(), ids);
+                        }
+                    }
+                } else {
+                    // Fallback jika server tidak mengembalikan synced_ids
+                    for (table, records) in payload_map {
+                        let ids: Vec<String> = records.iter()
+                            .filter_map(|r| r.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
+                            .collect();
+                        synced_ids_map.insert(table.clone(), ids);
+                    }
+                }
 
-    let mut synced_ids_map = HashMap::new();
-    if let Some(synced_obj) = response_json.get("synced_ids").and_then(|v| v.as_object()) {
-        for (tbl, ids_val) in synced_obj {
-            if let Some(ids_arr) = ids_val.as_array() {
-                let ids: Vec<String> = ids_arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect();
-                synced_ids_map.insert(tbl.clone(), ids);
+                return Ok(synced_ids_map);
+            }
+            Err(e) => {
+                last_err = format!("{}", e);
+                eprintln!("[WARN] Push attempt {} gagal: {}. Mencoba ulang...", attempt, e);
+                tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
             }
         }
-    } else {
-        // Fallback jika server tidak mengembalikan synced_ids
-        for (table, records) in payload_map {
-            let ids: Vec<String> = records.iter()
-                .filter_map(|r| r.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()))
-                .collect();
-            synced_ids_map.insert(table.clone(), ids);
-        }
     }
 
-    Ok(synced_ids_map)
+    Err(format!("Koneksi gagal saat push: {}", last_err))
 }
 
 // Fungsi sinkron untuk memperbarui status lokal record yang terunggah menjadi 'synced'

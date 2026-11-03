@@ -734,7 +734,6 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                                     app.set_sync_message(format!("Sync offline: {}", err).into());
                                     app.set_sync_toast_message(format!("Gagal Sinkron: {}", err).into());
                                     app.set_sync_toast_is_error(true);
-                                    app.set_is_online(false);
                                     println!("[WARN] Sinkronisasi Gagal: {}", err);
                                 }
                             }
