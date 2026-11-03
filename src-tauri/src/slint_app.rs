@@ -702,9 +702,10 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    // H. Trigger Cloud Sync
+    // H. Trigger Cloud Sync & Full Sync
     {
         let conn_arc = Arc::clone(&conn_arc);
+        let state = Arc::clone(&state);
         let app_weak = app_weak.clone();
         app.on_trigger_sync(move || {
             if let Some(app) = app_weak.upgrade() {
@@ -715,6 +716,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
 
                 let app_weak2 = app_weak.clone();
                 let conn_arc2 = Arc::clone(&conn_arc);
+                let state2 = Arc::clone(&state);
 
                 // Spawn task di background thread
                 std::thread::spawn(move || {
@@ -753,6 +755,75 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                             refresh_sync_status_ui(&app, &conn_arc2);
                             refresh_today_payments_ui(&app, &conn_arc2);
                             refresh_history_tab_ui(&app, &conn_arc2, "");
+
+                            // Muat ulang rincian tagihan siswa jika sedang dibuka di layar kasir POS
+                            let sid = state2.lock().unwrap().selected_student_id.clone();
+                            if let Some(student_id) = sid {
+                                load_student_details_ui(&app, &conn_arc2, &state2, &student_id, false);
+                            }
+                        }
+                    });
+                });
+            }
+        });
+    }
+
+    {
+        let conn_arc = Arc::clone(&conn_arc);
+        let state = Arc::clone(&state);
+        let app_weak = app_weak.clone();
+        app.on_trigger_full_sync(move || {
+            if let Some(app) = app_weak.upgrade() {
+                app.set_is_syncing(true);
+                app.set_sync_toast_message("Sedang mengunduh ulang seluruh data dari server pusat...".into());
+                app.set_sync_toast_is_error(false);
+                app.set_sync_message("Sedang mengunduh ulang seluruh data dari server pusat...".into());
+
+                let app_weak2 = app_weak.clone();
+                let conn_arc2 = Arc::clone(&conn_arc);
+                let state2 = Arc::clone(&state);
+
+                std::thread::spawn(move || {
+                    let db_state = crate::db::DbState {
+                        conn: Mutex::new(crate::db::init_db_standalone().unwrap()),
+                    };
+
+                    let rt = tokio::runtime::Runtime::new();
+                    let result_msg = if let Ok(rt) = rt {
+                        rt.block_on(async {
+                            crate::commands::perform_full_sync(&db_state).await
+                        })
+                    } else {
+                        Err("Gagal membuat runtime async".into())
+                    };
+
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(app) = app_weak2.upgrade() {
+                            app.set_is_syncing(false);
+                            match &result_msg {
+                                Ok(msg) => {
+                                    app.set_sync_message(msg.clone().into());
+                                    show_toast(&app, "Sinkronisasi Penuh Berhasil! Seluruh data lokal telah selaras.", false);
+                                    app.set_is_online(true);
+                                    println!("[INFO] Sinkronisasi Penuh Berhasil: {}", msg);
+                                }
+                                Err(err) => {
+                                    app.set_sync_message(format!("Sinkronisasi penuh gagal: {}", err).into());
+                                    show_toast(&app, &format!("Gagal Sinkronisasi Penuh: {}", err), true);
+                                    println!("[WARN] Sinkronisasi Penuh Gagal: {}", err);
+                                }
+                            }
+                            if let Ok(conn) = conn_arc2.lock() {
+                                update_branding_and_settings(&app, &conn);
+                            }
+                            refresh_sync_status_ui(&app, &conn_arc2);
+                            refresh_today_payments_ui(&app, &conn_arc2);
+                            refresh_history_tab_ui(&app, &conn_arc2, "");
+
+                            let sid = state2.lock().unwrap().selected_student_id.clone();
+                            if let Some(student_id) = sid {
+                                load_student_details_ui(&app, &conn_arc2, &state2, &student_id, false);
+                            }
                         }
                     });
                 });
@@ -1377,6 +1448,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
     {
         let app_weak_sync = app_weak.clone();
         let conn_arc_sync = Arc::clone(&conn_arc);
+        let state_sync = Arc::clone(&state);
         std::thread::spawn(move || {
             // Jeda 2 detik saat startup agar jendela UI telah ter-render penuh
             std::thread::sleep(std::time::Duration::from_secs(2));
@@ -1464,6 +1536,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
 
                             let app_weak_res = app_weak_sync.clone();
                             let conn_arc_res = Arc::clone(&conn_arc_sync);
+                            let state_res = Arc::clone(&state_sync);
                             let _ = slint::invoke_from_event_loop(move || {
                                 if let Some(app) = app_weak_res.upgrade() {
                                     match sync_res {
@@ -1477,6 +1550,12 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                                             }
                                             refresh_sync_status_ui(&app, &conn_arc_res);
                                             refresh_today_payments_ui(&app, &conn_arc_res);
+                                            refresh_history_tab_ui(&app, &conn_arc_res, "");
+
+                                            let sid = state_res.lock().unwrap().selected_student_id.clone();
+                                            if let Some(student_id) = sid {
+                                                load_student_details_ui(&app, &conn_arc_res, &state_res, &student_id, false);
+                                            }
                                         }
                                         Err(e) => {
                                             println!("[WARN] Autosync background: {}", e);

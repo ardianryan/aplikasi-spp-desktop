@@ -290,7 +290,12 @@ pub async fn fetch_pull_payload(api_url: &str, api_key: &str, last_synced: &str)
         .build()
         .map_err(|e| format!("Gagal menginisialisasi HTTP client: {}", e))?;
 
-    let url = format!("{}/api/v1/sync/pull?since={}", api_url.trim_end_matches('/'), urlencoding::encode(last_synced));
+    let clean_since = last_synced.trim();
+    let url = if clean_since.is_empty() || clean_since.starts_with("1970") {
+        format!("{}/api/v1/sync/pull", api_url.trim_end_matches('/'))
+    } else {
+        format!("{}/api/v1/sync/pull?since={}", api_url.trim_end_matches('/'), urlencoding::encode(clean_since))
+    };
     println!("Pulling data from: {}", url);
 
     let mut last_err = String::new();

@@ -622,16 +622,20 @@ pub fn is_fresh_install(state: State<'_, DbState>) -> Result<bool, String> {
     Ok(api_url.trim().is_empty())
 }
 
-pub async fn perform_sync(db_state: &DbState) -> Result<String, String> {
+pub async fn perform_sync_internal(db_state: &DbState, force_full: bool) -> Result<String, String> {
     // 1. Ambil pengaturan sync & last_synced_at (lock sesingkat mungkin)
     let (api_url, api_key, last_synced_at) = {
         let conn = db_state.conn.lock().unwrap();
         let (url, key) = get_sync_settings(&conn);
-        let last_synced: String = conn.query_row(
-            "SELECT value FROM settings WHERE key = 'last_synced_at';",
-            [],
-            |row| row.get(0),
-        ).unwrap_or_else(|_| "1970-01-01 00:00:00".to_string());
+        let last_synced: String = if force_full {
+            "".to_string()
+        } else {
+            conn.query_row(
+                "SELECT value FROM settings WHERE key = 'last_synced_at';",
+                [],
+                |row| row.get(0),
+            ).unwrap_or_else(|_| "".to_string())
+        };
         (url, key, last_synced)
     };
     
@@ -682,6 +686,14 @@ pub async fn perform_sync(db_state: &DbState) -> Result<String, String> {
     }
     
     Ok(format!("Pull Sukses (Timestamp Server: {}). {}", sync_time, push_result))
+}
+
+pub async fn perform_sync(db_state: &DbState) -> Result<String, String> {
+    perform_sync_internal(db_state, false).await
+}
+
+pub async fn perform_full_sync(db_state: &DbState) -> Result<String, String> {
+    perform_sync_internal(db_state, true).await
 }
 
 #[tauri::command]

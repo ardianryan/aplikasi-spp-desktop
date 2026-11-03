@@ -157,6 +157,7 @@ export component AppWindow inherits Window {
     callback set-payment-method(int);
     callback process-payment();
     callback trigger-sync();
+    callback trigger-full-sync();
     callback deposit-savings(string, string);
     callback withdraw-savings(string, string);
     callback refresh-history();
@@ -317,6 +318,7 @@ export component AppWindow inherits Window {
                     test-connection-clicked(url) => { root.test-sync-connection(url); }
                     save-settings-clicked(url) => { root.save-sync-settings(url); }
                     trigger-sync-clicked => { root.trigger-sync(); }
+                    trigger-full-sync-clicked => { root.trigger-full-sync(); }
                     toggle-autostart-clicked => { root.toggle-autostart-clicked(); }
                 }
 

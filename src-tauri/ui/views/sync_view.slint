@@ -18,6 +18,7 @@ export component SyncView inherits Rectangle {
     callback test-connection-clicked(string);
     callback save-settings-clicked(string);
     callback trigger-sync-clicked();
+    callback trigger-full-sync-clicked();
     callback toggle-autostart-clicked();
 
     VerticalLayout {
@@ -339,37 +340,76 @@ export component SyncView inherits Rectangle {
                     }
                 }
 
-                Rectangle {
-                    width: 200px;
-                    height: 40px;
-                    background: root.is-syncing ? #94a3b8 : touch-sync-now.has-hover ? Theme.emerald-hover : Theme.emerald;
-                    border-radius: 6px;
-                    animate background { duration: 150ms; }
-                    touch-sync-now := TouchArea {
-                        enabled: !root.is-syncing;
-                        clicked => { root.trigger-sync-clicked(); }
-                        mouse-cursor: pointer;
-                    }
-                    HorizontalLayout {
-                        alignment: center;
-                        spacing: 8px;
-                        VerticalLayout {
+                HorizontalLayout {
+                    spacing: 12px;
+
+                    Rectangle {
+                        width: 200px;
+                        height: 40px;
+                        background: root.is-syncing ? #94a3b8 : touch-sync-now.has-hover ? Theme.emerald-hover : Theme.emerald;
+                        border-radius: 6px;
+                        animate background { duration: 150ms; }
+                        touch-sync-now := TouchArea {
+                            enabled: !root.is-syncing;
+                            clicked => { root.trigger-sync-clicked(); }
+                            mouse-cursor: pointer;
+                        }
+                        HorizontalLayout {
                             alignment: center;
-                            width: 14px;
-                            Image {
-                                source: @image-url("../assets/icons/sync.svg");
+                            spacing: 8px;
+                            VerticalLayout {
+                                alignment: center;
                                 width: 14px;
-                                height: 14px;
-                                image-fit: contain;
-                                colorize: white;
+                                Image {
+                                    source: @image-url("../assets/icons/sync.svg");
+                                    width: 14px;
+                                    height: 14px;
+                                    image-fit: contain;
+                                    colorize: white;
+                                }
+                            }
+                            Text {
+                                text: root.is-syncing ? "Sinkronisasi..." : "Sinkronisasikan Sekarang";
+                                color: white;
+                                font-size: 12px;
+                                font-weight: 700;
+                                vertical-alignment: center;
                             }
                         }
-                        Text {
-                            text: root.is-syncing ? "Sinkronisasi..." : "Sinkronisasikan Sekarang";
-                            color: white;
-                            font-size: 12px;
-                            font-weight: 700;
-                            vertical-alignment: center;
+                    }
+
+                    Rectangle {
+                        width: 230px;
+                        height: 40px;
+                        background: root.is-syncing ? #94a3b8 : touch-sync-full.has-hover ? Theme.primary-hover : Theme.primary;
+                        border-radius: 6px;
+                        animate background { duration: 150ms; }
+                        touch-sync-full := TouchArea {
+                            enabled: !root.is-syncing;
+                            clicked => { root.trigger-full-sync-clicked(); }
+                            mouse-cursor: pointer;
+                        }
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 8px;
+                            VerticalLayout {
+                                alignment: center;
+                                width: 14px;
+                                Image {
+                                    source: @image-url("../assets/icons/sync.svg");
+                                    width: 14px;
+                                    height: 14px;
+                                    image-fit: contain;
+                                    colorize: white;
+                                }
+                            }
+                            Text {
+                                text: root.is-syncing ? "Sinkronisasi..." : "Sinkronisasi Penuh (Semua Data)";
+                                color: white;
+                                font-size: 12px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
                         }
                     }
                 }
