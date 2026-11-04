@@ -156,7 +156,7 @@ fn get_ipc_socket_path() -> std::path::PathBuf {
     app_dir.join("ipc.sock")
 }
 
-pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_slint_app() -> Result<(), Box<dyn std::error::Error>> {
     println!("[INFO] Menjalankan Partisipasi Sekolah Desktop v0.2.0...");
 
     // Deteksi argumen baris perintah untuk deep-linking (partisipasi-sekolah://)
@@ -486,7 +486,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     let assignments_model = app.get_assignments();
                     for i in 0..assignments_model.row_count() {
                         if let Some(item) = assignments_model.row_data(i) {
-                            if item.id == aid_str && !item.is_group_header && item.remaining_raw > 0 {
+                            if item.id == aid_str && !item.is_group_header && !item.is_section_header && item.remaining_raw > 0 {
                                 state_lock.cart.push(ActiveCartItem {
                                     assignment_id: aid_str.clone(),
                                     name: format!("{} {}", item.payment_type_name, item.month_name).trim().to_string(),
@@ -583,21 +583,18 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     _ => "Tunai",
                 };
 
-                let method_id = match state_lock.selected_method {
-                    1 => "transfer",
-                    2 => "tabungan",
-                    _ => "cash",
-                };
-
                 let academic_year_id = state_lock.active_year_id.clone();
                 let cashier_nama = state_lock.user_nama.clone();
+                let cashier_notes = app.get_cashier_notes().trim().to_string();
 
-                // Generate kode transaksi: TRX-YYYYMMDD-HHMMSS-RAND
+                // Generate kode transaksi standar: TRX-YYYYMMDD-XXXXXX (18 Karakter, Paritas 1:1 Web)
                 let now = Local::now();
-                let tx_code = format!("TRX-{}-{}", now.format("%Y%m%d%H%M%S"), &Uuid::new_v4().to_string()[..4].to_uppercase());
+                let random_hex = format!("{:06X}", (Uuid::new_v4().as_u128() % 16777215));
+                let tx_code = format!("TRX-{}-{}", now.format("%Y%m%d"), random_hex);
                 let tx_id = Uuid::new_v4().to_string();
                 let now_str = now.format("%Y-%m-%d %H:%M:%S").to_string();
 
+                let selected_method = state_lock.selected_method;
                 drop(state_lock);
 
                 // Eksekusi Simpan ke SQLite
@@ -607,11 +604,30 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                     if let Ok(tx) = tx {
                         let user_id = get_active_user_id(&tx);
 
+                        // Ambil UUID riil payment_method_id dari tabel payment_methods
+                        let method_id: Option<String> = match selected_method {
+                            1 => tx.query_row(
+                                "SELECT id FROM payment_methods WHERE type = 'bank_transfer' OR name LIKE '%Transfer%' LIMIT 1;",
+                                [],
+                                |r| r.get(0)
+                            ).ok(),
+                            2 => tx.query_row(
+                                "SELECT id FROM payment_methods WHERE type = 'tabungan' OR name LIKE '%Tabungan%' LIMIT 1;",
+                                [],
+                                |r| r.get(0)
+                            ).ok(),
+                            _ => tx.query_row(
+                                "SELECT id FROM payment_methods WHERE type = 'cash' OR name LIKE '%Tunai%' LIMIT 1;",
+                                [],
+                                |r| r.get(0)
+                            ).ok(),
+                        };
+
                         // Insert ke payments sesuai schema SQLite & sync engine
                         let res_p = tx.execute(
                             "INSERT INTO payments (id, transaction_code, student_id, user_id, total_amount, payment_method_id, payment_method_name, notes, academic_year_id, created_at, sync_status)
-                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '', ?8, ?9, 'pending_push');",
-                            params![tx_id, tx_code, student_id, user_id, total_amount, method_id, method_name, academic_year_id, now_str]
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'pending_push');",
+                            params![tx_id, tx_code, student_id, user_id, total_amount, method_id, method_name, cashier_notes, academic_year_id, now_str]
                         );
 
                         if res_p.is_ok() {
@@ -625,21 +641,47 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                                 );
 
                                 // Update payment_assignments paid_amount & status
+                                // Status enum selaras web: 'lunas' atau 'cicilan' (bukan 'sebagian')
+                                // sync_status dipertahankan 'synced' agar tidak mengunci pembaruan pull dari server
                                 let _ = tx.execute(
                                     "UPDATE payment_assignments 
                                      SET paid_amount = paid_amount + ?1,
                                          status = CASE 
                                              WHEN (paid_amount + ?1 + relief_amount) >= amount THEN 'lunas'
-                                             ELSE 'sebagian'
+                                             ELSE 'cicilan'
                                          END,
-                                         sync_status = 'pending_push'
+                                         sync_status = 'synced'
                                      WHERE id = ?2;",
                                     params![item.pay_amount, item.assignment_id]
                                 );
                             }
 
+                            // Catat pembukuan jurnal umum (Kas Masuk) agar sinkron dengan Laporan Kas Web
+                            let student_nama: String = tx.query_row(
+                                "SELECT nama FROM students WHERE id = ?1;",
+                                [&student_id],
+                                |r| r.get(0)
+                            ).unwrap_or_else(|_| "Siswa".into());
+
+                            let journal_id = Uuid::new_v4().to_string();
+                            let journal_desc = format!("Pembayaran dari {} ({})", student_nama, tx_code);
+                            let _ = tx.execute(
+                                "INSERT INTO journals (id, academic_year_id, date, type, category, description, amount, reference_id, user_id, created_at, sync_status)
+                                 VALUES (?1, ?2, ?3, 'pemasukan', 'Pembayaran Siswa', ?4, ?5, ?6, ?7, ?8, 'pending_push');",
+                                params![
+                                    journal_id,
+                                    academic_year_id,
+                                    now.format("%Y-%m-%d").to_string(),
+                                    journal_desc,
+                                    total_amount,
+                                    tx_id,
+                                    user_id,
+                                    now_str
+                                ]
+                            );
+
                             // Jika debet dari Tabungan Siswa
-                            if method_id == "tabungan" {
+                            if selected_method == 2 {
                                 let savings_id: String = tx.query_row(
                                     "SELECT id FROM savings WHERE student_id = ?1;",
                                     [&student_id],
@@ -682,6 +724,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                 app.set_is_processing_payment(false);
 
                 if success {
+                    app.set_cashier_notes("".into());
                     state.lock().unwrap().cart.clear();
                     // Refresh data siswa & ringkasan
                     load_student_details_ui(&app, &conn_arc, &state, &student_id, false);
@@ -1567,9 +1610,13 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    // Jalankan Event Loop GUI Slint Native
+    // Jalankan Event Loop Antarmuka Slint UI
     app.run()?;
     Ok(())
+}
+
+pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
+    run_slint_app()
 }
 
 fn base64_decode(input: &str) -> Option<Vec<u8>> {
@@ -1823,6 +1870,19 @@ fn populate_receipt_modal(
         }
     };
 
+    // Paritas 1:1 Web: Suffix T.A hanya ditampilkan jika transaksi mencakup lebih dari 1 tahun ajaran
+    let unique_years: std::collections::HashSet<String> = items_raw.iter()
+        .filter_map(|item| item.3.clone())
+        .collect();
+    let show_year_suffix = unique_years.len() > 1;
+
+    let show_nominal_setting: String = conn.query_row(
+        "SELECT value FROM settings WHERE key = 'show_nominal_receipt';",
+        [],
+        |r| r.get(0)
+    ).unwrap_or_else(|_| "1".into());
+    let show_nominal = show_nominal_setting != "0";
+
     let mut modal_items = Vec::new();
     for (i, item) in items_raw.iter().enumerate() {
         let mut desc = item.0.clone();
@@ -1832,13 +1892,20 @@ fn populate_receipt_modal(
                 desc.push_str(&format!(" ({})", m_name));
             }
         }
-        if let Some(ref y) = item.3 {
-            desc.push_str(&format!(" [T.A {}]", y));
+        if show_year_suffix {
+            if let Some(ref y) = item.3 {
+                desc.push_str(&format!(" (T.A {})", y));
+            }
         }
+        let amt_str = if show_nominal {
+            format_idr(item.2)
+        } else {
+            "Sudah Lunas".to_string()
+        };
         modal_items.push(ReceiptModalItem {
             index: (i + 1) as i32,
             description: desc.into(),
-            amount: format_idr(item.2).into(),
+            amount: amt_str.into(),
         });
     }
 
@@ -1859,6 +1926,12 @@ fn populate_receipt_modal(
         app.set_has_receipt_stamp(false);
     }
 
+    let display_total = if show_nominal {
+        format_idr(total_amount)
+    } else {
+        "Sudah Lunas".to_string()
+    };
+
     app.set_receipt_modal_data(ReceiptModalData {
         transaction_code: trx_code.into(),
         created_at: created_at.into(),
@@ -1867,7 +1940,7 @@ fn populate_receipt_modal(
         student_nis: student_nis.unwrap_or_else(|| "-".into()).into(),
         student_class: student_kelas.into(),
         payment_method: payment_method_name.into(),
-        total_amount: format_idr(total_amount).into(),
+        total_amount: display_total.into(),
         cashier_name: if cashier_name.is_empty() { "Petugas Kasir".into() } else { cashier_name.into() },
         notes: notes.unwrap_or_default().into(),
         committee_name: committee_name.into(),
@@ -1934,6 +2007,11 @@ fn send_receipt_to_printer(conn: &Connection, trx_code: &str, cashier_name: &str
         ))
     }).map_err(|e| e.to_string())?.flatten().collect();
 
+    let unique_years: std::collections::HashSet<String> = items.iter()
+        .filter_map(|item| item.3.clone())
+        .collect();
+    let show_year_suffix = unique_years.len() > 1;
+
     // Dokumen Struk Monospace Standar Printer Kasir (Thermal POS / Dot Matrix)
     let mut txt = String::new();
     txt.push_str("========================================\n");
@@ -1957,6 +2035,11 @@ fn send_receipt_to_printer(conn: &Connection, trx_code: &str, cashier_name: &str
         if let Some(m) = itm.1 {
             let mn = month_name(m);
             if !mn.is_empty() { desc.push_str(&format!(" ({})", mn)); }
+        }
+        if show_year_suffix {
+            if let Some(ref y) = itm.3 {
+                desc.push_str(&format!(" (T.A {})", y));
+            }
         }
         if desc.len() > 24 { desc.truncate(24); }
         txt.push_str(&format!("{:<3}{:<25}{:>12}\n", i + 1, desc, format_idr(itm.2)));
@@ -2177,13 +2260,56 @@ fn load_student_details_ui(
         let mut total_tunggakan = 0.0;
 
         if let Ok(mut stmt) = conn.prepare(
-            "SELECT a.id, t.name, t.type, a.month, a.amount, a.paid_amount, a.relief_amount, a.status, COALESCE(y.name, 'Lainnya') as academic_year_name, COALESCE(y.is_active, 0) as is_active
+            "SELECT 
+                a.id, 
+                t.name, 
+                t.type, 
+                a.month, 
+                a.amount, 
+                a.paid_amount, 
+                a.relief_amount, 
+                a.status, 
+                COALESCE(y.name, 'Lainnya') as academic_year_name, 
+                COALESCE(y.is_active, 0) as is_active,
+                pd.last_payment_date,
+                COALESCE(inst.inst_count, 0) as inst_count
              FROM payment_assignments a
              JOIN payment_types t ON a.payment_type_id = t.id
              LEFT JOIN academic_years y ON a.academic_year_id = y.id
+             LEFT JOIN (
+                 SELECT payment_assignment_id, MAX(created_at) as last_payment_date
+                 FROM payment_details
+                 GROUP BY payment_assignment_id
+             ) pd ON a.id = pd.payment_assignment_id
+             LEFT JOIN (
+                 SELECT payment_assignment_id, COUNT(*) as inst_count
+                 FROM payment_details
+                 GROUP BY payment_assignment_id
+             ) inst ON a.id = inst.payment_assignment_id
              WHERE a.student_id = ?1
-             ORDER BY COALESCE(y.name, '0000') DESC, t.type ASC, (CASE WHEN a.month IS NULL THEN 999 WHEN a.month >= 7 THEN a.month - 6 ELSE a.month + 6 END) ASC, t.name ASC;"
+             ORDER BY 
+                 COALESCE(y.name, '0000') DESC, 
+                 t.type ASC, 
+                 (CASE WHEN a.month IS NULL THEN 999 WHEN a.month >= 7 THEN a.month - 6 ELSE a.month + 6 END) ASC, 
+                 t.name ASC;"
         ) {
+            struct ParsedBill {
+                id: String,
+                name: String,
+                t_type: String,
+                month_name: String,
+                amount: f64,
+                paid: f64,
+                relief: f64,
+                remaining: f64,
+                status_key: String,
+                status_label: String,
+                year_name: String,
+                is_active: bool,
+                last_payment_date: String,
+                installments_text: String,
+            }
+
             if let Ok(rows) = stmt.query_map([student_id], |row| {
                 let id: String = row.get(0)?;
                 let name: String = row.get(1)?;
@@ -2195,6 +2321,8 @@ fn load_student_details_ui(
                 let status: String = row.get(7)?;
                 let year_name: String = row.get(8)?;
                 let is_active: i32 = row.get(9)?;
+                let last_payment_date: Option<String> = row.get(10).unwrap_or(None);
+                let inst_count: i32 = row.get(11).unwrap_or(0);
 
                 let month_name = match month {
                     Some(7) => "Juli", Some(8) => "Agustus", Some(9) => "September",
@@ -2205,103 +2333,270 @@ fn load_student_details_ui(
                 };
 
                 let remaining = (amount - paid - relief).max(0.0);
+                let is_lunas = remaining <= 0.0 || status == "lunas" || status == "bebas";
+                let is_cicilan = !is_lunas && (paid > 0.0 || relief > 0.0 || status == "cicilan" || status == "sebagian");
 
-                Ok((id, name, t_type, month_name.to_string(), amount, paid, relief, remaining, status, year_name, is_active))
+                let status_key = if is_lunas {
+                    "lunas".to_string()
+                } else if is_cicilan {
+                    "cicilan".to_string()
+                } else {
+                    "belum_bayar".to_string()
+                };
+
+                let last_date_str = last_payment_date.clone().unwrap_or_default();
+                let status_label = if is_lunas {
+                    if let Some(ref dt) = last_payment_date {
+                        let clean_dt = if dt.len() >= 10 {
+                            let parts: Vec<&str> = dt[..10].split('-').collect();
+                            if parts.len() == 3 {
+                                format!("{}/{}/{}", parts[2], parts[1], parts[0])
+                            } else {
+                                dt[..10].to_string()
+                            }
+                        } else {
+                            dt.clone()
+                        };
+                        format!("LUNAS: {}", clean_dt)
+                    } else {
+                        "LUNAS".to_string()
+                    }
+                } else if is_cicilan {
+                    "CICILAN".to_string()
+                } else {
+                    "BELUM BAYAR".to_string()
+                };
+
+                let installments_text = if t_type == "bebas" && inst_count > 0 {
+                    format!("Riwayat Cicilan ({}x)", inst_count)
+                } else {
+                    "".to_string()
+                };
+
+                Ok(ParsedBill {
+                    id,
+                    name,
+                    t_type,
+                    month_name: month_name.to_string(),
+                    amount,
+                    paid,
+                    relief,
+                    remaining,
+                    status_key,
+                    status_label,
+                    year_name,
+                    is_active: is_active == 1,
+                    last_payment_date: last_date_str,
+                    installments_text,
+                })
             }) {
-                let all_rows: Vec<_> = rows.flatten().collect();
+                let all_rows: Vec<ParsedBill> = rows.flatten().collect();
                 let mut year_stats: std::collections::HashMap<String, (i32, f64)> = std::collections::HashMap::new();
 
                 for r in &all_rows {
-                    total_tagihan += r.4;
-                    total_dibayar += r.5;
-                    total_keringanan += r.6;
-                    total_tunggakan += r.7;
+                    total_tagihan += r.amount;
+                    total_dibayar += r.paid;
+                    total_keringanan += r.relief;
+                    total_tunggakan += r.remaining;
 
-                    let stat = year_stats.entry(r.9.clone()).or_insert((0, 0.0));
+                    let stat = year_stats.entry(r.year_name.clone()).or_insert((0, 0.0));
                     stat.0 += 1;
-                    stat.1 += r.7; // remaining
+                    stat.1 += r.remaining;
                 }
 
-                // Reset status collapsible jika diminta: TP aktif dibuka, TP lama diciutkan (default)
                 if reset_collapse {
                     let mut st = state.lock().unwrap();
                     st.collapsed_years.clear();
                     for r in &all_rows {
-                        if r.10 != 1 {
-                            st.collapsed_years.insert(r.9.clone());
+                        if !r.is_active {
+                            st.collapsed_years.insert(r.year_name.clone());
                         }
                     }
                 }
 
-                let mut current_year: Option<String> = None;
-                for r in all_rows {
-                    let year_name = r.9.clone();
-                    let is_active = r.10 == 1;
-
-                    // Sisipkan Header Grup Tahun Pelajaran jika berganti
-                    if current_year.as_ref() != Some(&year_name) {
-                        current_year = Some(year_name.clone());
-                        let (count_bills, rem_sum) = year_stats.get(&year_name).cloned().unwrap_or((0, 0.0));
-                        let is_collapsed = state.lock().unwrap().collapsed_years.contains(&year_name);
-
-                        let header_title = if is_active {
-                            format!("Tahun Pelajaran {} (Aktif)", year_name)
-                        } else {
-                            format!("Tahun Pelajaran {}", year_name)
-                        };
-
-                        let rem_text = if rem_sum > 0.0 {
-                            format!("Sisa: {}", format_idr(rem_sum))
-                        } else {
-                            "Lunas".to_string()
-                        };
-
-                        assignments_vec.push(AssignmentData {
-                            id: format!("hdr-{}", year_name).into(),
-                            academic_year_name: year_name.clone().into(),
-                            payment_type_name: "".into(),
-                            payment_type_type: "".into(),
-                            month_name: "".into(),
-                            amount: "".into(),
-                            paid_amount: "".into(),
-                            remaining_amount: "".into(),
-                            remaining_raw: 0,
-                            status: "".into(),
-                            is_selected: false,
-                            is_group_header: true,
-                            group_header_title: header_title.into(),
-                            is_active_year: is_active,
-                            is_collapsed,
-                            is_hidden: false,
-                            total_bills_in_year: count_bills,
-                            total_remaining_in_year: rem_text.into(),
-                        });
+                // Dapatkan urutan tahun pelajaran
+                let mut distinct_years = Vec::new();
+                for r in &all_rows {
+                    if !distinct_years.iter().any(|(y, _)| y == &r.year_name) {
+                        distinct_years.push((r.year_name.clone(), r.is_active));
                     }
+                }
 
+                for (year_name, is_active) in distinct_years {
+                    let (count_bills, rem_sum) = year_stats.get(&year_name).cloned().unwrap_or((0, 0.0));
                     let is_collapsed = state.lock().unwrap().collapsed_years.contains(&year_name);
-                    if !is_collapsed {
-                        let is_sel = state.lock().unwrap().cart.iter().any(|c| c.assignment_id == r.0);
 
-                        assignments_vec.push(AssignmentData {
-                            id: r.0.into(),
-                            academic_year_name: year_name.into(),
-                            payment_type_name: r.1.into(),
-                            payment_type_type: r.2.into(),
-                            month_name: r.3.into(),
-                            amount: format_idr(r.4).into(),
-                            paid_amount: format_idr(r.5).into(),
-                            remaining_amount: format_idr(r.7).into(),
-                            remaining_raw: r.7 as i32,
-                            status: r.8.into(),
-                            is_selected: is_sel,
-                            is_group_header: false,
-                            group_header_title: "".into(),
-                            is_active_year: is_active,
-                            is_collapsed: false,
-                            is_hidden: false,
-                            total_bills_in_year: 0,
-                            total_remaining_in_year: "".into(),
-                        });
+                    let header_title = if is_active {
+                        format!("Tahun Pelajaran {} (Aktif)", year_name)
+                    } else {
+                        format!("Tahun Pelajaran {}", year_name)
+                    };
+
+                    let rem_text = if rem_sum > 0.0 {
+                        format!("Sisa: {}", format_idr(rem_sum))
+                    } else {
+                        "Lunas".to_string()
+                    };
+
+                    // Header Tahun Pelajaran
+                    assignments_vec.push(AssignmentData {
+                        id: format!("hdr-{}", year_name).into(),
+                        academic_year_name: year_name.clone().into(),
+                        payment_type_name: "".into(),
+                        payment_type_type: "".into(),
+                        month_name: "".into(),
+                        amount: "".into(),
+                        paid_amount: "".into(),
+                        remaining_amount: "".into(),
+                        remaining_raw: 0,
+                        status: "".into(),
+                        status_label: "".into(),
+                        last_payment_date: "".into(),
+                        is_selected: false,
+                        is_group_header: true,
+                        group_header_title: header_title.into(),
+                        is_section_header: false,
+                        section_title: "".into(),
+                        section_count_text: "".into(),
+                        section_subtotal_text: "".into(),
+                        is_active_year: is_active,
+                        is_collapsed,
+                        is_hidden: false,
+                        total_bills_in_year: count_bills,
+                        total_remaining_in_year: rem_text.into(),
+                        installments_text: "".into(),
+                    });
+
+                    if !is_collapsed {
+                        let year_rows: Vec<&ParsedBill> = all_rows.iter().filter(|r| r.year_name == year_name).collect();
+                        let bebas_rows: Vec<&ParsedBill> = year_rows.iter().filter(|r| r.t_type == "bebas").cloned().collect();
+                        let bulanan_rows: Vec<&ParsedBill> = year_rows.iter().filter(|r| r.t_type == "bulanan").cloned().collect();
+
+                        // 1. Seksi Tagihan Bebas (Jika ada)
+                        if !bebas_rows.is_empty() {
+                            let bebas_subtotal: f64 = bebas_rows.iter().map(|r| r.remaining).sum();
+                            assignments_vec.push(AssignmentData {
+                                id: format!("sec-bebas-{}", year_name).into(),
+                                academic_year_name: year_name.clone().into(),
+                                payment_type_name: "".into(),
+                                payment_type_type: "bebas".into(),
+                                month_name: "".into(),
+                                amount: "".into(),
+                                paid_amount: "".into(),
+                                remaining_amount: "".into(),
+                                remaining_raw: 0,
+                                status: "".into(),
+                                status_label: "".into(),
+                                last_payment_date: "".into(),
+                                is_selected: false,
+                                is_group_header: false,
+                                group_header_title: "".into(),
+                                is_section_header: true,
+                                section_title: "Tagihan Bebas".into(),
+                                section_count_text: format!("{} ITEM", bebas_rows.len()).into(),
+                                section_subtotal_text: format!("Subtotal: {}", format_idr(bebas_subtotal)).into(),
+                                is_active_year: is_active,
+                                is_collapsed: false,
+                                is_hidden: false,
+                                total_bills_in_year: 0,
+                                total_remaining_in_year: "".into(),
+                                installments_text: "".into(),
+                            });
+
+                            for r in bebas_rows {
+                                let is_sel = state.lock().unwrap().cart.iter().any(|c| c.assignment_id == r.id);
+                                assignments_vec.push(AssignmentData {
+                                    id: r.id.clone().into(),
+                                    academic_year_name: year_name.clone().into(),
+                                    payment_type_name: r.name.clone().into(),
+                                    payment_type_type: r.t_type.clone().into(),
+                                    month_name: r.month_name.clone().into(),
+                                    amount: format_idr(r.amount).into(),
+                                    paid_amount: format_idr(r.paid).into(),
+                                    remaining_amount: format_idr(r.remaining).into(),
+                                    remaining_raw: r.remaining as i32,
+                                    status: r.status_key.clone().into(),
+                                    status_label: r.status_label.clone().into(),
+                                    last_payment_date: r.last_payment_date.clone().into(),
+                                    is_selected: is_sel,
+                                    is_group_header: false,
+                                    group_header_title: "".into(),
+                                    is_section_header: false,
+                                    section_title: "".into(),
+                                    section_count_text: "".into(),
+                                    section_subtotal_text: "".into(),
+                                    is_active_year: is_active,
+                                    is_collapsed: false,
+                                    is_hidden: false,
+                                    total_bills_in_year: 0,
+                                    total_remaining_in_year: "".into(),
+                                    installments_text: r.installments_text.clone().into(),
+                                });
+                            }
+                        }
+
+                        // 2. Seksi Tagihan Bulanan (Jika ada)
+                        if !bulanan_rows.is_empty() {
+                            let bulanan_subtotal: f64 = bulanan_rows.iter().map(|r| r.remaining).sum();
+                            assignments_vec.push(AssignmentData {
+                                id: format!("sec-bulanan-{}", year_name).into(),
+                                academic_year_name: year_name.clone().into(),
+                                payment_type_name: "".into(),
+                                payment_type_type: "bulanan".into(),
+                                month_name: "".into(),
+                                amount: "".into(),
+                                paid_amount: "".into(),
+                                remaining_amount: "".into(),
+                                remaining_raw: 0,
+                                status: "".into(),
+                                status_label: "".into(),
+                                last_payment_date: "".into(),
+                                is_selected: false,
+                                is_group_header: false,
+                                group_header_title: "".into(),
+                                is_section_header: true,
+                                section_title: "Tagihan Bulanan".into(),
+                                section_count_text: format!("{} ITEM", bulanan_rows.len()).into(),
+                                section_subtotal_text: format!("Subtotal: {}", format_idr(bulanan_subtotal)).into(),
+                                is_active_year: is_active,
+                                is_collapsed: false,
+                                is_hidden: false,
+                                total_bills_in_year: 0,
+                                total_remaining_in_year: "".into(),
+                                installments_text: "".into(),
+                            });
+
+                            for r in bulanan_rows {
+                                let is_sel = state.lock().unwrap().cart.iter().any(|c| c.assignment_id == r.id);
+                                assignments_vec.push(AssignmentData {
+                                    id: r.id.clone().into(),
+                                    academic_year_name: year_name.clone().into(),
+                                    payment_type_name: r.name.clone().into(),
+                                    payment_type_type: r.t_type.clone().into(),
+                                    month_name: r.month_name.clone().into(),
+                                    amount: format_idr(r.amount).into(),
+                                    paid_amount: format_idr(r.paid).into(),
+                                    remaining_amount: format_idr(r.remaining).into(),
+                                    remaining_raw: r.remaining as i32,
+                                    status: r.status_key.clone().into(),
+                                    status_label: r.status_label.clone().into(),
+                                    last_payment_date: r.last_payment_date.clone().into(),
+                                    is_selected: is_sel,
+                                    is_group_header: false,
+                                    group_header_title: "".into(),
+                                    is_section_header: false,
+                                    section_title: "".into(),
+                                    section_count_text: "".into(),
+                                    section_subtotal_text: "".into(),
+                                    is_active_year: is_active,
+                                    is_collapsed: false,
+                                    is_hidden: false,
+                                    total_bills_in_year: 0,
+                                    total_remaining_in_year: "".into(),
+                                    installments_text: r.installments_text.clone().into(),
+                                });
+                            }
+                        }
                     }
                 }
             }
@@ -2371,7 +2666,7 @@ fn update_cart_and_selection_ui(app: &AppWindow, state: &SlintAppState) {
     let mut updated_assignments = Vec::new();
     for i in 0..assignments.row_count() {
         if let Some(mut item) = assignments.row_data(i) {
-            if !item.is_group_header {
+            if !item.is_group_header && !item.is_section_header {
                 item.is_selected = state.cart.iter().any(|c| c.assignment_id == item.id.as_str());
             }
             updated_assignments.push(item);

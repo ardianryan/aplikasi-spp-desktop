@@ -10,6 +10,9 @@ Format dokumen ini mengacu pada [Keep a Changelog](https://keepachangelog.com/en
 
 ### Dibuat (Added)
 - **Pembaruan Kerangka Antarmuka Slint UI:** Memigrasikan antarmuka grafis ke Slint UI berbasis Rust, menghasilkan waktu luncur instan, performa rendering tinggi, serta konsumsi memori (*RAM*) yang sangat hemat dibandingkan versi peramban sebelumnya.
+- **Paritas 1:1 Pembayaran Kasir POS:** Pemisahan sub-kelompok *Tagihan Bebas* dan *Tagihan Bulanan* per tahun pelajaran, penambahan kolom catatan transaksi kasir, dukungan riwayat angsuran cicilan pos bebas, badge lunas berformat tanggal bayar terakhir (`LUNAS: dd/mm/YYYY`), serta pembakuan format kode transaksi menjadi `TRX-YYYYMMDD-XXXXXX`.
+- **Pencatatan Otomatis Jurnal Kas Masuk:** Setiap transaksi pembayaran kasir lokal otomatis mencatat pembukuan kas masuk (`type = 'pemasukan'`) ke tabel `journals` lokal yang otomatis terdorong ke peladen saat proses sinkronisasi.
+- **Penyelarasan Format Kuitansi Digital & Fisik:** Menghormati konfigurasi `show_nominal_receipt` dari pengaturan sekolah (menampilkan status lunas bila nominal disembunyikan), penyelarasan format keterangan pos kuitansi, serta penataan ulang lebar daftar dropdown pencarian siswa agar tombol aksi tidak terpotong.
 - **Adapter Pencetakan Kuitansi Fisik Langsung:** Integrasi adapter cetak langsung berbasis CUPS (`lpr`) di macOS/Linux dan spooler sistem di Windows. Kuitansi dicetak langsung ke printer kasir USB/LAN tanpa perlu membuka jendela PDF atau peramban web, dengan tata letak 1:1 identik dengan versi web.
 - **Fitur Sinkronisasi Penuh (*Full Baseline Sync*):** Penambahan tombol *Sinkronisasi Penuh (Semua Data)* di menu Pengaturan yang mampu menarik dan merekonsiliasi seluruh data acuan dan riwayat transaksi sekolah (~56 MB) dalam tempo ~11 detik melalui transaksi SQLite teroptimasi.
 - **Penyegaran Otomatis Layar Kasir POS:** Tampilan kasir otomatis memuat ulang rincian tagihan siswa aktif sesaat setelah sinkronisasi (baik manual maupun otomatis di latar belakang) selesai tanpa perlu pencarian ulang.
@@ -18,6 +21,7 @@ Format dokumen ini mengacu pada [Keep a Changelog](https://keepachangelog.com/en
 - **Penyelamatan Basis Data Otomatis:** Mengganti penghapusan berkas rusak dengan pembuatan salinan cadangan otomatis berstempel waktu (`.corrupt_backup_{timestamp}.db`).
 
 ### Diubah (Changed)
+- **Perbaikan Mesin Sinkronisasi Tagihan (`payment_assignments`):** Menghilangkan penguncian status lokal `pending_push` pada `payment_assignments` yang sebelumnya menghalangi pembaruan data tagihan siswa dari peladen web, otomatis memulihkan baris terisolir pada proses *pull*.
 - **Penegakan Default Protokol HTTPS:** Seluruh komunikasi jaringan ke peladen pusat (`https://sumbangan.smage.my.id`) kini menggunakan enkripsi TLS/HTTPS secara bawaan guna mencegah risiko penyadapan data keuangan pada jaringan lokal sekolah.
 - **Restriksi Hak Akses Push Sync:** Membatasi endpoint `syncPush` di peladen pusat dengan *allowlist* khusus tabel transaksi kasir (`payments`, `payment_details`, `reliefs`, `journals`, `savings`, `savings_transactions`), menolak penimpaan data pengguna atau pengaturan sistem sekolah.
 - **Perbaikan Keamanan Rate Limiting OTP:** Reset batas laju pada `exchangeDesktopPairingCode` kini hanya dieksekusi setelah kode otorisasi 6-digit terbukti valid, belum pernah dipakai, dan belum kedaluwarsa.

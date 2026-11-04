@@ -26,15 +26,22 @@ export struct AssignmentData {
     paid_amount: string,
     remaining_amount: string,
     remaining_raw: int,
-    status: string, // "lunas", "sebagian", "belum_bayar"
+    status: string, // "lunas", "cicilan", "belum_bayar"
+    status_label: string, // "LUNAS: 15/09/2026", "CICILAN", "BELUM BAYAR"
+    last_payment_date: string,
     is_selected: bool,
     is_group_header: bool,
     group_header_title: string,
+    is_section_header: bool, // Subheader "Tagihan Bebas" / "Tagihan Bulanan"
+    section_title: string,
+    section_count_text: string,
+    section_subtotal_text: string,
     is_active_year: bool,
     is_collapsed: bool,
     is_hidden: bool,
     total_bills_in_year: int,
     total_remaining_in_year: string,
+    installments_text: string, // "Riwayat Cicilan (1x)"
 }
 
 export struct CartItemData {
@@ -140,6 +147,7 @@ export component PosView inherits Rectangle {
     in property <int> selected-payment-method: 0; // 0: Tunai, 1: Transfer, 2: Tabungan
     in property <bool> is-processing-payment: false;
     in property <bool> savings-enabled: false;
+    in-out property <string> cashier-notes: "";
 
     callback toggle-assignment-selection(string);
     callback remove-cart-item(string);
@@ -442,14 +450,15 @@ export component PosView inherits Rectangle {
                                 spacing: 4px;
                                 for item in root.assignments: Rectangle {
                                     visible: !item.is_hidden;
-                                    height: item.is_hidden ? 0px : item.is_group_header ? 38px : 40px;
-                                    background: item.is_group_header ? (touch-row.has-hover ? #dbeafe : item.is_active_year ? #eff6ff : #f8fafc) : item.is_selected ? #eff6ff : touch-row.has-hover ? #f8fafc : transparent;
-                                    border-color: item.is_group_header ? (item.is_active_year ? #bfdbfe : #e2e8f0) : item.is_selected ? Theme.primary : Theme.border-muted;
+                                    height: item.is_hidden ? 0px : item.is_group_header ? 38px : item.is_section_header ? 28px : item.installments_text != "" ? 46px : 40px;
+                                    background: item.is_group_header ? (touch-row.has-hover ? #dbeafe : item.is_active_year ? #eff6ff : #f8fafc) : item.is_section_header ? #f1f5f9 : item.is_selected ? #eff6ff : touch-row.has-hover ? #f8fafc : transparent;
+                                    border-color: item.is_group_header ? (item.is_active_year ? #bfdbfe : #e2e8f0) : item.is_section_header ? #e2e8f0 : item.is_selected ? Theme.primary : Theme.border-muted;
                                     border-width: 1px;
                                     border-radius: 6px;
                                     animate background { duration: 150ms; }
 
                                     touch-row := TouchArea {
+                                        enabled: !item.is_section_header;
                                         mouse-cursor: pointer;
                                         clicked => {
                                             if item.is_group_header {
@@ -526,7 +535,48 @@ export component PosView inherits Rectangle {
                                         }
                                     }
 
-                                    if !item.is_group_header && !item.is_hidden: HorizontalLayout {
+                                    if item.is_section_header && !item.is_hidden: HorizontalLayout {
+                                        padding-left: 12px;
+                                        padding-right: 12px;
+                                        alignment: space-between;
+
+                                        HorizontalLayout {
+                                            spacing: 8px;
+                                            Text {
+                                                text: item.section_title;
+                                                font-size: 11px;
+                                                font-weight: 700;
+                                                color: #334155;
+                                                vertical-alignment: center;
+                                            }
+                                            Rectangle {
+                                                height: 18px;
+                                                border-radius: 9px;
+                                                background: #e2e8f0;
+                                                HorizontalLayout {
+                                                    padding-left: 6px;
+                                                    padding-right: 6px;
+                                                    Text {
+                                                        text: item.section_count_text;
+                                                        font-size: 9px;
+                                                        font-weight: 700;
+                                                        color: #475569;
+                                                        vertical-alignment: center;
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Text {
+                                            text: item.section_subtotal_text;
+                                            font-size: 11px;
+                                            font-weight: 600;
+                                            color: #64748b;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+
+                                    if !item.is_group_header && !item.is_section_header && !item.is_hidden: HorizontalLayout {
                                         padding-left: 12px;
                                         padding-right: 12px;
                                         spacing: 8px;
@@ -534,7 +584,7 @@ export component PosView inherits Rectangle {
                                         VerticalLayout {
                                             alignment: center;
                                             width: 20px;
-                                            Rectangle {
+                                            if item.remaining_raw > 0: Rectangle {
                                                 width: 18px;
                                                 height: 18px;
                                                 background: item.is_selected ? Theme.primary : white;
@@ -552,13 +602,22 @@ export component PosView inherits Rectangle {
                                             }
                                         }
 
-                                        Text {
+                                        VerticalLayout {
                                             horizontal-stretch: 1;
-                                            text: item.payment_type_name + (item.month_name != "" ? " (" + item.month_name + ")" : "");
-                                            font-size: 12px;
-                                            font-weight: 600;
-                                            color: Theme.text-main;
-                                            vertical-alignment: center;
+                                            alignment: center;
+                                            spacing: 2px;
+                                            Text {
+                                                text: item.payment_type_name + (item.month_name != "" ? " (" + item.month_name + ")" : "");
+                                                font-size: 12px;
+                                                font-weight: 600;
+                                                color: Theme.text-main;
+                                            }
+                                            if item.installments_text != "": Text {
+                                                text: item.installments_text;
+                                                font-size: 10px;
+                                                font-weight: 600;
+                                                color: Theme.primary;
+                                            }
                                         }
 
                                         Text {
@@ -582,17 +641,17 @@ export component PosView inherits Rectangle {
 
                                         VerticalLayout {
                                             alignment: center;
-                                            width: 75px;
+                                            width: item.status == "lunas" && item.last_payment_date != "" ? 120px : 85px;
                                             Rectangle {
-                                                width: 75px;
+                                                width: item.status == "lunas" && item.last_payment_date != "" ? 120px : 85px;
                                                 height: 20px;
                                                 border-radius: 10px;
-                                                background: item.status == "lunas" ? Theme.emerald-light : item.status == "sebagian" ? Theme.amber-light : Theme.rose-light;
+                                                background: item.status == "lunas" ? Theme.emerald-light : item.status == "cicilan" ? Theme.amber-light : Theme.rose-light;
                                                 Text {
-                                                    text: item.status == "lunas" ? "LUNAS" : item.status == "sebagian" ? "CICILAN" : "BELUM";
-                                                    font-size: 10px;
+                                                    text: item.status_label != "" ? item.status_label : (item.status == "lunas" ? "LUNAS" : item.status == "cicilan" ? "CICILAN" : "BELUM");
+                                                    font-size: 9px;
                                                     font-weight: 700;
-                                                    color: item.status == "lunas" ? Theme.emerald : item.status == "sebagian" ? Theme.amber : Theme.rose;
+                                                    color: item.status == "lunas" ? Theme.emerald : item.status == "cicilan" ? Theme.amber : Theme.rose;
                                                     horizontal-alignment: center;
                                                     vertical-alignment: center;
                                                 }
@@ -910,6 +969,40 @@ export component PosView inherits Rectangle {
                             }
                         }
 
+                        // Input Catatan Transaksi Kasir (Paritas 1:1 Web)
+                        VerticalLayout {
+                            spacing: 4px;
+                            Text {
+                                text: "Catatan Pembayaran (Opsional):";
+                                font-size: 11px;
+                                font-weight: 600;
+                                color: Theme.text-muted;
+                            }
+                            Rectangle {
+                                height: 32px;
+                                background: Theme.bg-primary;
+                                border-color: Theme.border;
+                                border-width: 1px;
+                                border-radius: 6px;
+                                HorizontalLayout {
+                                    padding-left: 8px;
+                                    padding-right: 8px;
+                                    notes-input := TextInput {
+                                        text <=> root.cashier-notes;
+                                        font-size: 11px;
+                                        color: Theme.text-main;
+                                        vertical-alignment: center;
+                                        single-line: true;
+                                        accepted => {
+                                            if !root.is-processing-payment {
+                                                root.process-payment-clicked();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         // Tombol Proses Pembayaran
                         Rectangle {
                             height: 40px;
@@ -932,6 +1025,15 @@ export component PosView inherits Rectangle {
                                     color: white;
                                     vertical-alignment: center;
                                 }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            alignment: center;
+                            Text {
+                                text: "Pintasan: Tekan Enter untuk memproses";
+                                font-size: 10px;
+                                color: #94a3b8;
                             }
                         }
                     }

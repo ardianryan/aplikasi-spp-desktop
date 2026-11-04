@@ -386,15 +386,20 @@ pub fn save_payment(
     payment_method_name: String,
     notes: Option<String>,
     items: Vec<PaymentItemInput>,
-    loket_id: String,
+    _loket_id: String,
     state: State<'_, DbState>,
 ) -> Result<String, String> {
     let mut conn = state.conn.lock().unwrap();
     let tx = conn.transaction().map_err(|e| format!("Gagal memulai transaksi DB: {}", e))?;
     
     let date_str = Local::now().format("%Y%m%d").to_string();
-    let random_hex = format!("{:x}", Uuid::new_v4().as_u128() % 16777215); // 6 hex digits
-    let trx_code = format!("TRX-{}-{}-{}", loket_id.to_uppercase(), date_str, random_hex);
+    let random_hex: String = (0..6)
+        .map(|_| {
+            let idx = (Uuid::new_v4().as_u128() % 16) as usize;
+            b"0123456789ABCDEF"[idx] as char
+        })
+        .collect();
+    let trx_code = format!("TRX-{}-{}", date_str, random_hex);
     
     let payment_id = Uuid::new_v4().to_string();
     let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
@@ -437,22 +442,30 @@ pub fn save_payment(
             params![item.amount, item.amount, item.amount, now_str, item.payment_assignment_id]
         ).map_err(|e| format!("Gagal memperbarui status tagihan lokal: {}", e))?;
         
-        // d. Catat Buku Jurnal Otomatis (Debet Masuk Kas)
-        let journal_id = Uuid::new_v4().to_string();
-        let journal_desc = format!("Penerimaan Pembayaran {} - Siswa ID {}", item.payment_type_name, student_id);
-        tx.execute(
-            "INSERT INTO journals (id, academic_year_id, date, type, category, description, amount, created_at, sync_status) 
-             VALUES (?, ?, ?, 'debet', 'pembayaran_spp', ?, ?, ?, 'pending_push');",
-            params![
-                journal_id,
-                academic_year_id,
-                &now_str[..10], // YYYY-MM-DD
-                journal_desc,
-                item.amount,
-                now_str,
-            ]
-        ).map_err(|e| format!("Gagal menyimpan jurnal penerimaan: {}", e))?;
     }
+    
+    // d. Catat Buku Jurnal Otomatis (Pemasukan Kas, 1:1 Paritas Web)
+    let journal_id = Uuid::new_v4().to_string();
+    let student_name: String = tx.query_row(
+        "SELECT nama FROM students WHERE id = ? LIMIT 1;",
+        [&student_id],
+        |row| row.get(0),
+    ).unwrap_or_else(|_| "Siswa".to_string());
+    let journal_desc = format!("Pembayaran dari {} ({})", student_name, trx_code);
+    tx.execute(
+        "INSERT INTO journals (id, date, type, category, description, amount, reference_id, user_id, academic_year_id, created_at, updated_at, sync_status) 
+         VALUES (?, ?, 'pemasukan', 'Pembayaran Siswa', ?, ?, ?, NULL, ?, ?, ?, 'pending_push');",
+        params![
+            journal_id,
+            &now_str[..10],
+            journal_desc,
+            total_amount,
+            payment_id,
+            academic_year_id,
+            now_str,
+            now_str,
+        ]
+    ).map_err(|e| format!("Gagal menyimpan jurnal penerimaan: {}", e))?;
     
     tx.commit().map_err(|e| format!("Gagal commit database: {}", e))?;
     

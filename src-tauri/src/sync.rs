@@ -161,7 +161,8 @@ fn upsert_json_record(conn: &Connection, table_name: &str, record: &Value) -> Re
         }
     }
 
-    if has_sync_status {
+    // Jangan biarkan status lokal memblokir pembaruan payment_assignments dari server
+    if has_sync_status && table_name != "payment_assignments" {
         if let Some(id_val) = obj.get("id").and_then(|v| v.as_str()) {
             let local_status: Option<String> = conn.query_row(
                 &format!("SELECT sync_status FROM {} WHERE id = ?;", table_name),
@@ -362,6 +363,9 @@ pub fn apply_pull_payload(conn: &Connection, payload: &Value) -> Result<String, 
             }
         }
     }
+
+    // Rekonsiliasi penanda payment_assignments agar selalu selaras dengan server
+    let _ = conn.execute("UPDATE payment_assignments SET sync_status = 'synced' WHERE sync_status = 'pending_push';", []);
 
     // Simpan timestamp sinkronisasi terakhir
     if !sync_time.is_empty() {

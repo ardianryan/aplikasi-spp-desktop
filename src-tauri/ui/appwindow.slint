@@ -100,6 +100,7 @@ export component AppWindow inherits Window {
     in property <string> cart-total: "Rp 0";
     in property <int> selected-payment-method: 0;
     in property <bool> is-processing-payment: false;
+    in-out property <string> cashier-notes: "";
 
     // Savings State
     in property <[SavingsHistoryData]> savings-history: [];
@@ -265,6 +266,7 @@ export component AppWindow inherits Window {
                     selected-payment-method: root.selected-payment-method;
                     is-processing-payment: root.is-processing-payment;
                     savings-enabled: root.savings-enabled;
+                    cashier-notes <=> root.cashier-notes;
 
                     toggle-assignment-selection(id) => { root.toggle-assignment(id); }
                     remove-cart-item(id) => { root.remove-cart(id); }
@@ -398,7 +400,7 @@ export component AppWindow inherits Window {
                 if root.show-search-results: Rectangle {
                     x: 232px;
                     y: 6px;
-                    width: 480px;
+                    width: 550px;
                     height: root.search-results.length == 0 ? 84px : Math.min(320px, 46px + root.search-results.length * 52px);
                     background: Theme.bg-card;
                     border-color: Theme.border;
@@ -408,6 +410,7 @@ export component AppWindow inherits Window {
                     drop-shadow-color: #00000020;
 
                     VerticalLayout {
+                        width: 100%;
                         alignment: start;
                         padding: 10px;
                         spacing: 6px;
@@ -423,7 +426,7 @@ export component AppWindow inherits Window {
                                 color: Theme.text-muted;
                             }
                             Text {
-                                text: "Klik siswa untuk memilih";
+                                text: "Klik baris siswa untuk memilih";
                                 font-size: 11px;
                                 color: Theme.primary;
                             }
@@ -445,20 +448,30 @@ export component AppWindow inherits Window {
                         }
 
                         if root.search-results.length > 0: Flickable {
+                            width: 100%;
                             vertical-stretch: 1;
                             content-height: root.search-results.length * 52px;
                             VerticalLayout {
+                                width: 100%;
                                 alignment: start;
                                 spacing: 4px;
                                 for res in root.search-results: Rectangle {
+                                    width: 100%;
                                     height: 48px;
                                     background: touch-res.has-hover ? #eff6ff : Theme.bg-secondary;
                                     border-radius: 6px;
                                     animate background { duration: 150ms; }
 
+                                    touch-res := TouchArea {
+                                        clicked => {
+                                            root.student-selected(res.id);
+                                        }
+                                        mouse-cursor: pointer;
+                                    }
+
                                     HorizontalLayout {
                                         padding-left: 12px;
-                                        padding-right: 12px;
+                                        padding-right: 14px;
                                         spacing: 10px;
 
                                         VerticalLayout {
@@ -527,10 +540,10 @@ export component AppWindow inherits Window {
 
                                         VerticalLayout {
                                             alignment: center;
-                                            width: 58px;
+                                            width: 64px;
                                             Rectangle {
-                                                width: 58px;
-                                                height: 26px;
+                                                width: 64px;
+                                                height: 28px;
                                                 background: touch-res.has-hover ? Theme.primary-hover : Theme.primary;
                                                 border-radius: 4px;
                                                 animate background { duration: 150ms; }
@@ -546,13 +559,6 @@ export component AppWindow inherits Window {
                                                 }
                                             }
                                         }
-                                    }
-
-                                    touch-res := TouchArea {
-                                        clicked => {
-                                            root.student-selected(res.id);
-                                        }
-                                        mouse-cursor: pointer;
                                     }
                                 }
                             }

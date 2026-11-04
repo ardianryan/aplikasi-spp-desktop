@@ -82,15 +82,15 @@ Aplikasi bekerja secara langsung menggunakan basis data terenkripsi di komputer 
 2. **Jalankan dalam Mode Pengembangan:**
    ```bash
    cd src-tauri
-   cargo run --bin native
+   cargo run --bin partisipasi
    ```
 
 3. **Kompilasi Biner Rilis (*Production Build*):**
    ```bash
    cd src-tauri
-   cargo build --release --bin native
+   cargo build --release --bin partisipasi
    ```
-   Hasil biner siap pakai akan berada di `src-tauri/target/release/native`.
+   Hasil biner siap pakai akan berada di `src-tauri/target/release/partisipasi`.
 
 ---
 
