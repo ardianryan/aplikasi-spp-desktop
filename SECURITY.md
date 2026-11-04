@@ -17,7 +17,7 @@ Aplikasi Desktop **Partisipasi Sekolah** menerapkan strategi *Defense-in-Depth* 
 ### B. Keamanan Komunikasi Jaringan (Data-in-Transit Encryption)
 - **Protokol:** Enkripsi wajib **TLS 1.2 / 1.3 (HTTPS)** untuk seluruh komunikasi antara aplikasi desktop dan server API pusat.
 - **Otentikasi API:** Menggunakan header kustom `X-API-Key` berbasis hash token untuk setiap request *Sync Pull* dan *Sync Push*.
-- **SSO Browser Binding:** Proses login pengguna kasir dan administrator dilakukan melalui browser bawaan sistem (System Browser SSO) menggunakan mekanisme **Deep Link Custom Scheme Protocol (`psk://`)**. Hal ini mencegah serangan *embedded webview credential harvesting* dan *man-in-the-middle (MITM)*.
+- **SSO Browser Binding:** Proses login pengguna kasir dan administrator dilakukan melalui peramban bawaan sistem menggunakan mekanisme **Deep Link Protocol (`partisipasi-sekolah://` / `partisipasi://`)**. Hal ini mencegah serangan *embedded webview credential harvesting* dan *man-in-the-middle (MITM)*.
 
 ### C. Proteksi Injeksi & Integritas Data
 - **Parameterized Queries:** Seluruh operasi database di layer Rust (`rusqlite`) menggunakan *prepared statements* terparameter untuk mencegah serangan *SQL Injection*.
@@ -37,7 +37,7 @@ Aplikasi ini dirancang untuk mematuhi regulasi perundang-undangan digital yang b
 
 ### B. UU No. 11 Tahun 2008 jo. UU No. 19 Tahun 2016 tentang ITE
 - **Pasal 15 (Penyelenggaraan Sistem Elektronik secara Aman & Andal):** Sistem kasir desktop menjamin keandalan transaksi elektronik dengan pencatatan status sinkronisasi yang tidak manipulatif.
-- **Pasal 16 (Keutuhan Informasi Elektronik):** Kwitansi dan bukti pembayaran yang dicetak atau tersimpan dijamin keasliannya melalui checksum pencatatan di basis data terenkripsi.
+- **Pasal 16 (Keutuhan Informasi Elektronik):** Kuitansi dan bukti pembayaran yang dicetak atau tersimpan dijamin keasliannya melalui checksum pencatatan di basis data terenkripsi.
 
 ---
 
