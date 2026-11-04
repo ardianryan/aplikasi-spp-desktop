@@ -12,7 +12,7 @@
 
 **Partisipasi Sekolah Desktop Client** adalah aplikasi kasir pembayaran dan pengelolaan keuangan sekolah berbasis desktop yang dikembangkan oleh **PMTI SMAN 1 GEDEG** untuk SMA Negeri 1 Gedeg. Aplikasi ini dirancang khusus untuk operasional kasir harian yang andal dalam berbagai kondisi jaringan (*offline-first*).
 
-Aplikasi bekerja secara langsung menggunakan basis data terenkripsi di komputer lokal kasir tanpa bergantung pada peramban web (*browser*). Ketika komputer terhubung kembali dengan internet atau jaringan lokal sekolah, seluruh data pembayaran otomatis disinkronkan dua arah (*bi-directional sync*) dengan server web pusat (`https://sumbangan.smage.my.id`).
+Aplikasi bekerja secara langsung menggunakan basis data terenkripsi di komputer lokal kasir tanpa bergantung pada peramban web (*browser*). Ketika komputer terhubung kembali dengan internet atau jaringan lokal sekolah, seluruh data pembayaran otomatis disinkronkan dua arah (*bi-directional sync*) dengan server web pusat (`https://partisipasi.sekolah.sch.id`).
 
 ---
 
@@ -23,7 +23,8 @@ Aplikasi bekerja secara langsung menggunakan basis data terenkripsi di komputer 
 - **Penyiapan Tanpa Konfigurasi Manual (*Zero-Config Endpoint*):** Kasir cukup memasukkan alamat server sekolah. Kunci otorisasi terminal disediakan dan disinkronkan secara otomatis oleh server tanpa perlu menyalin *API Key* secara manual.
 - **Autentikasi Cepat via Kode Otorisasi 6-Digit (OTP) & SSO:** Kasir dapat masuk secara instan menggunakan kode OTP 6-digit dari peramban atau melalui tautan otorisasi (*deep link*) `partisipasi-sekolah://`.
 - **Dukungan Sinkronisasi Lengkap (Bertahap & Penuh):** Dilengkapi sinkronisasi berkala di latar belakang serta tombol **Sinkronisasi Penuh (Semua Data)** yang mampu merekonsiliasi seluruh data sekolah dalam waktu singkat (~11 detik). Layar kasir otomatis memuat ulang tagihan siswa aktif saat sinkronisasi selesai.
-- **Pencetakan Kuitansi Langsung (CUPS Adapter & Spooler):** Mencetak bukti pembayaran langsung ke printer kasir kas melalui antarmuka CUPS (`lpr`) di macOS/Linux dan spooler cetak di Windows tanpa perlu membuka jendela PDF atau peramban. Format kuitansi 1:1 identik dengan cetakan web resmi.
+- **Pencetakan Kuitansi Standar (Printer Kantor A4):** Mencetak bukti pembayaran langsung melalui dialog cetak sistem operasi ke printer kasir/kantor (Inkjet, LaserJet, dsb.) dengan format HTML A4 1:1 identik dengan cetakan web resmi lengkap dengan kop, logo, dan stempel sekolah.
+- **Kamus Istilah & Nomenklatur Dinamis:** Mengikuti konfigurasi istilah dari server web (misalnya istilah pembayaran dapat disesuaikan menjadi sumbangan atau partisipasi).
 - **Siklus Kalender Akademik Sekolah (Juli – Juni):** Penataan urutan tagihan bulanan berstandar kalender tahun pelajaran sekolah yang dimulai dari bulan Juli hingga Juni.
 - **Mode Berjalan di Latar Belakang (*System Tray*):** Menekan tombol tutup `[X]` otomatis menyembunyikan jendela ke baki sistem (*system tray*) agar proses sinkronisasi otomatis tetap beroperasi.
 - **Wizard Penyiapan 3 Langkah:** Panduan penyiapan awal interaktif dengan uji sambungan server instan.

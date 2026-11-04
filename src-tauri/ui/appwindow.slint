@@ -55,6 +55,18 @@ export component AppWindow inherits Window {
     in property <bool> has-school-logo: false;
     in property <image> school-logo;
 
+    // Kamus Istilah & Nomenklatur Dinamis (Paritas Web)
+    in property <string> term-pembayaran: "Pembayaran";
+    in property <string> term-pembayaran-upper: "PEMBAYARAN";
+    in property <string> term-pembayaran-lower: "pembayaran";
+    in property <string> term-tagihan: "Tagihan";
+    in property <string> term-tagihan-lower: "tagihan";
+    in property <string> term-siswa: "Siswa";
+    in property <string> term-siswa-lower: "siswa";
+    in property <string> term-kwitansi: "Kwitansi";
+    in property <string> term-kwitansi-upper: "KWITANSI";
+    in property <string> term-tunggakan: "Tunggakan";
+
     // Navigation & Auth State
     in-out property <bool> is-logged-in: false;
     in-out property <string> login-error: "";
@@ -231,6 +243,7 @@ export component AppWindow inherits Window {
                 active-academic-year: root.active-academic-year;
                 is-syncing: root.is-syncing;
                 student-filter-status <=> root.student-filter-status;
+                term-siswa: root.term-siswa;
                 student-filter-changed(st) => {
                     root.student-filter-changed(st);
                 }
@@ -267,6 +280,15 @@ export component AppWindow inherits Window {
                     is-processing-payment: root.is-processing-payment;
                     savings-enabled: root.savings-enabled;
                     cashier-notes <=> root.cashier-notes;
+                    term-pembayaran: root.term-pembayaran;
+                    term-pembayaran-upper: root.term-pembayaran-upper;
+                    term-pembayaran-lower: root.term-pembayaran-lower;
+                    term-tagihan: root.term-tagihan;
+                    term-tagihan-lower: root.term-tagihan-lower;
+                    term-siswa: root.term-siswa;
+                    term-siswa-lower: root.term-siswa-lower;
+                    term-kwitansi: root.term-kwitansi;
+                    term-tunggakan: root.term-tunggakan;
 
                     toggle-assignment-selection(id) => { root.toggle-assignment(id); }
                     remove-cart-item(id) => { root.remove-cart(id); }
@@ -283,6 +305,10 @@ export component AppWindow inherits Window {
                     current-balance: root.current-student.savings_balance;
                     history: root.savings-history;
                     is-processing: root.is-processing-savings;
+                    term-pembayaran: root.term-pembayaran;
+                    term-pembayaran-lower: root.term-pembayaran-lower;
+                    term-siswa: root.term-siswa;
+                    term-siswa-lower: root.term-siswa-lower;
 
                     deposit-clicked(amt, note) => { root.deposit-savings(amt, note); }
                     withdraw-clicked(amt, note) => { root.withdraw-savings(amt, note); }
@@ -290,6 +316,9 @@ export component AppWindow inherits Window {
 
                 if root.active-tab == 2: HistoryView {
                     records: root.history-records;
+                    term-pembayaran: root.term-pembayaran;
+                    term-siswa: root.term-siswa;
+                    term-siswa-lower: root.term-siswa-lower;
                     refresh-clicked => { root.refresh-history(); }
                     search-changed(q) => { root.history-search-changed(q); }
                     print-receipt(code) => { root.print-receipt(code); }
@@ -420,13 +449,13 @@ export component AppWindow inherits Window {
                             padding-right: 6px;
                             alignment: space-between;
                             Text {
-                                text: root.student-filter-status == 0 ? "Hasil Pencarian Siswa Aktif:" : "Hasil Pencarian Siswa Non-Aktif / Alumni:";
+                                text: root.student-filter-status == 0 ? ("Hasil Pencarian " + root.term-siswa + " Aktif:") : ("Hasil Pencarian " + root.term-siswa + " Non-Aktif / Alumni:");
                                 font-size: 11px;
                                 font-weight: 700;
                                 color: Theme.text-muted;
                             }
                             Text {
-                                text: "Klik baris siswa untuk memilih";
+                                text: "Klik baris " + root.term-siswa-lower + " untuk memilih";
                                 font-size: 11px;
                                 color: Theme.primary;
                             }
@@ -439,7 +468,7 @@ export component AppWindow inherits Window {
                             HorizontalLayout {
                                 alignment: center;
                                 Text {
-                                    text: "Tidak ada siswa ditemukan.";
+                                    text: "Tidak ada " + root.term-siswa-lower + " ditemukan.";
                                     font-size: 12px;
                                     color: Theme.text-muted;
                                     vertical-alignment: center;
@@ -599,7 +628,7 @@ export component AppWindow inherits Window {
                     alignment: space-between;
 
                     Text {
-                        text: "Kwitansi Pembayaran Kasir";
+                        text: root.term-kwitansi + " " + root.term-pembayaran + " Kasir";
                         font-size: 15px;
                         font-weight: 800;
                         color: Theme.primary;
@@ -694,7 +723,7 @@ export component AppWindow inherits Window {
 
                         // Judul Dokumen Kwitansi
                         Text {
-                            text: "KWITANSI PEMBAYARAN";
+                            text: root.term-kwitansi-upper + " " + root.term-pembayaran-upper;
                             font-size: 12px;
                             font-weight: 800;
                             letter-spacing: 1px;
@@ -713,7 +742,7 @@ export component AppWindow inherits Window {
                                     Text { text: ": " + root.receipt-modal-data.transaction_code; font-size: 10px; font-weight: 700; color: #0f172a; }
                                 }
                                 HorizontalLayout {
-                                    Text { width: 85px; text: "Nama Siswa"; font-size: 10px; font-weight: 600; color: #475569; }
+                                    Text { width: 85px; text: "Nama " + root.term-siswa; font-size: 10px; font-weight: 600; color: #475569; }
                                     Text { text: ": " + root.receipt-modal-data.student_name; font-size: 10px; font-weight: 700; color: #0f172a; }
                                 }
                                 HorizontalLayout {
@@ -750,7 +779,7 @@ export component AppWindow inherits Window {
                                 padding-left: 8px;
                                 padding-right: 8px;
                                 Text { width: 28px; text: "No"; font-size: 10px; font-weight: 700; color: #334155; vertical-alignment: center; }
-                                Text { horizontal-stretch: 1; text: "Keterangan Pembayaran"; font-size: 10px; font-weight: 700; color: #334155; vertical-alignment: center; }
+                                Text { horizontal-stretch: 1; text: "Keterangan " + root.term-pembayaran; font-size: 10px; font-weight: 700; color: #334155; vertical-alignment: center; }
                                 Text { width: 110px; text: "Jumlah"; font-size: 10px; font-weight: 700; color: #334155; horizontal-alignment: right; vertical-alignment: center; }
                             }
                         }
@@ -789,7 +818,7 @@ export component AppWindow inherits Window {
                                 padding-left: 10px;
                                 padding-right: 10px;
                                 alignment: space-between;
-                                Text { text: "Total Pembayaran"; font-size: 11px; font-weight: 800; color: #0f172a; vertical-alignment: center; }
+                                Text { text: "Total " + root.term-pembayaran; font-size: 11px; font-weight: 800; color: #0f172a; vertical-alignment: center; }
                                 Text { text: root.receipt-modal-data.total_amount; font-size: 12px; font-weight: 800; color: #1e3a8a; vertical-alignment: center; }
                             }
                         }
@@ -851,7 +880,7 @@ export component AppWindow inherits Window {
 
                         // Footer Bukti Sah
                         Text {
-                            text: "Kwitansi ini merupakan bukti pembayaran yang sah • Dicetak oleh Sistem Kasir Partisipasi Sekolah";
+                            text: root.term-kwitansi + " ini merupakan bukti " + root.term-pembayaran-lower + " yang sah • Dicetak oleh Sistem Kasir Partisipasi Sekolah";
                             font-size: 8px;
                             color: #94a3b8;
                             horizontal-alignment: center;
@@ -909,7 +938,7 @@ export component AppWindow inherits Window {
                                 }
                             }
                             Text {
-                                text: "Cetak Kwitansi";
+                                text: "Cetak " + root.term-kwitansi;
                                 font-size: 12px;
                                 font-weight: 700;
                                 color: white;

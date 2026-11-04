@@ -149,6 +149,17 @@ export component PosView inherits Rectangle {
     in property <bool> savings-enabled: false;
     in-out property <string> cashier-notes: "";
 
+    // Kamus Istilah & Nomenklatur Dinamis
+    in property <string> term-pembayaran: "Pembayaran";
+    in property <string> term-pembayaran-upper: "PEMBAYARAN";
+    in property <string> term-pembayaran-lower: "pembayaran";
+    in property <string> term-tagihan: "Tagihan";
+    in property <string> term-tagihan-lower: "tagihan";
+    in property <string> term-siswa: "Siswa";
+    in property <string> term-siswa-lower: "siswa";
+    in property <string> term-kwitansi: "Kwitansi";
+    in property <string> term-tunggakan: "Tunggakan";
+
     callback toggle-assignment-selection(string);
     callback remove-cart-item(string);
     callback select-payment-method(int);
@@ -230,7 +241,7 @@ export component PosView inherits Rectangle {
                     }
 
                     Text {
-                        text: "Cari Data Siswa";
+                        text: "Cari Data " + root.term-siswa;
                         font-size: 20px;
                         font-weight: 700;
                         color: white;
@@ -238,7 +249,7 @@ export component PosView inherits Rectangle {
                     }
 
                     Text {
-                        text: "Ketik nama, NIS, atau kelas pada kotak pencarian di bagian atas untuk memulai transaksi pembayaran kasir.";
+                        text: "Ketik nama, NIS, atau kelas pada kotak pencarian di bagian atas untuk memulai transaksi " + root.term-pembayaran-lower + " kasir.";
                         font-size: 13px;
                         color: rgba(255, 255, 255, 0.85);
                         horizontal-alignment: center;
@@ -364,7 +375,7 @@ export component PosView inherits Rectangle {
                                         }
 
                                         Text {
-                                            text: "Ganti Siswa";
+                                            text: "Ganti " + root.term-siswa;
                                             font-size: 11px;
                                             font-weight: 600;
                                             color: Theme.text-muted;
@@ -398,7 +409,7 @@ export component PosView inherits Rectangle {
                             height: 22px;
                             alignment: space-between;
                             Text {
-                                text: "Daftar Tagihan & Pos Biaya";
+                                text: "Daftar " + root.term-tagihan + " & Pos Biaya";
                                 font-size: 13px;
                                 font-weight: 700;
                                 color: Theme.text-main;
@@ -422,7 +433,7 @@ export component PosView inherits Rectangle {
                                 padding-right: 12px;
                                 spacing: 8px;
                                 Text { width: 32px; text: "Pilih"; font-size: 11px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
-                                Text { horizontal-stretch: 1; text: "Nama Pos / Periode Bulan"; font-size: 11px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
+                                Text { horizontal-stretch: 1; text: "Pos " + root.term-pembayaran + " / Periode Bulan"; font-size: 11px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
                                 Text { width: 90px; text: "Jumlah"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
                                 Text { width: 90px; text: "Sisa Bayar"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
                                 Text { width: 75px; text: "Status"; font-size: 11px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: center; vertical-alignment: center; }
@@ -435,7 +446,7 @@ export component PosView inherits Rectangle {
                             HorizontalLayout {
                                 alignment: center;
                                 Text {
-                                    text: "Tidak ada tagihan yang di-assign untuk siswa ini.";
+                                    text: "Tidak ada " + root.term-tagihan-lower + " yang di-assign untuk " + root.term-siswa-lower + " ini.";
                                     font-size: 12px;
                                     color: Theme.text-muted;
                                     vertical-alignment: center;
@@ -715,13 +726,13 @@ export component PosView inherits Rectangle {
                             padding: 12px;
                             spacing: 4px;
                             Text {
-                                text: "Siap Melayani Pembayaran";
+                                text: "Siap Melayani " + root.term-pembayaran;
                                 font-size: 12px;
                                 font-weight: 700;
                                 color: Theme.emerald;
                             }
                             Text {
-                                text: "Pembayaran dapat diproses kapan saja. Data otomatis tersimpan dan disinkronkan saat terhubung.";
+                                text: root.term-pembayaran + " dapat diproses kapan saja. Data otomatis tersimpan dan disinkronkan saat terhubung.";
                                 font-size: 11px;
                                 color: #166534;
                                 wrap: word-wrap;
@@ -732,25 +743,25 @@ export component PosView inherits Rectangle {
                     VerticalLayout {
                         spacing: 10px;
                         Text {
-                            text: "Alur Pembayaran Kasir:";
+                            text: "Alur " + root.term-pembayaran + " Kasir:";
                             font-size: 12px;
                             font-weight: 700;
                             color: Theme.text-main;
                         }
                         Text {
-                            text: "1. Ketik nama atau NIS siswa pada kolom pencarian di bagian atas.";
+                            text: "1. Ketik nama atau NIS " + root.term-siswa-lower + " pada kolom pencarian di bagian atas.";
                             font-size: 12px;
                             color: Theme.text-muted;
                             wrap: word-wrap;
                         }
                         Text {
-                            text: "2. Pilih siswa dari daftar hasil pencarian.";
+                            text: "2. Pilih " + root.term-siswa-lower + " dari daftar hasil pencarian.";
                             font-size: 12px;
                             color: Theme.text-muted;
                             wrap: word-wrap;
                         }
                         Text {
-                            text: "3. Centang tagihan yang akan dibayarkan.";
+                            text: "3. Centang " + root.term-tagihan-lower + " yang akan dibayarkan.";
                             font-size: 12px;
                             color: Theme.text-muted;
                             wrap: word-wrap;
@@ -797,7 +808,7 @@ export component PosView inherits Rectangle {
                             }
                         }
                         Text {
-                            text: "Keranjang Pembayaran";
+                            text: "Keranjang " + root.term-pembayaran;
                             font-size: 13px;
                             font-weight: 700;
                             color: Theme.text-main;
@@ -897,7 +908,7 @@ export component PosView inherits Rectangle {
                         HorizontalLayout {
                             alignment: space-between;
                             Text {
-                                text: "Total Tagihan Dipilih:";
+                                text: "Total " + root.term-tagihan + " Dipilih:";
                                 font-size: 12px;
                                 color: Theme.text-muted;
                                 font-weight: 600;
@@ -973,7 +984,7 @@ export component PosView inherits Rectangle {
                         VerticalLayout {
                             spacing: 4px;
                             Text {
-                                text: "Catatan Pembayaran (Opsional):";
+                                text: "Catatan " + root.term-pembayaran + " (Opsional):";
                                 font-size: 11px;
                                 font-weight: 600;
                                 color: Theme.text-muted;
@@ -1019,7 +1030,7 @@ export component PosView inherits Rectangle {
                                 alignment: center;
                                 spacing: 8px;
                                 Text {
-                                    text: root.is-processing-payment ? "Memproses Transaksi..." : "PROSES PEMBAYARAN";
+                                    text: root.is-processing-payment ? "Memproses Transaksi..." : ("PROSES " + root.term-pembayaran-upper);
                                     font-size: 12px;
                                     font-weight: 700;
                                     color: white;
@@ -1087,7 +1098,7 @@ export component PosView inherits Rectangle {
                         padding-right: 12px;
                         spacing: 10px;
                         Text { width: 140px; text: "No. Transaksi"; font-size: 10px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
-                        Text { horizontal-stretch: 1; text: "Nama Siswa"; font-size: 10px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
+                        Text { horizontal-stretch: 1; text: "Nama " + root.term-siswa; font-size: 10px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
                         Text { width: 80px; text: "Metode"; font-size: 10px; font-weight: 700; color: Theme.text-muted; vertical-alignment: center; }
                         Text { width: 110px; text: "Total"; font-size: 10px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
                         Text { width: 70px; text: "Waktu"; font-size: 10px; font-weight: 700; color: Theme.text-muted; horizontal-alignment: right; vertical-alignment: center; }
@@ -1100,7 +1111,7 @@ export component PosView inherits Rectangle {
                     HorizontalLayout {
                         alignment: center;
                         Text {
-                            text: "Belum ada transaksi pembayaran yang dilakukan hari ini.";
+                            text: "Belum ada transaksi " + root.term-pembayaran-lower + " yang dilakukan hari ini.";
                             font-size: 11px;
                             color: Theme.text-muted;
                             vertical-alignment: center;

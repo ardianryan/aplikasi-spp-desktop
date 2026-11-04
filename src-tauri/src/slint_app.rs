@@ -237,7 +237,7 @@ pub fn run_slint_app() -> Result<(), Box<dyn std::error::Error>> {
             update_branding_and_settings(&app, &conn);
 
             let api_url: String = conn.query_row("SELECT value FROM settings WHERE key = 'api_url';", [], |r| r.get(0))
-                .unwrap_or_else(|_| "https://sumbangan.smage.my.id".to_string());
+                .unwrap_or_default();
             app.set_api_endpoint_url(api_url.into());
 
             let has_pin = crate::commands::has_offline_pin_conn(&conn).unwrap_or(false);
@@ -255,11 +255,14 @@ pub fn run_slint_app() -> Result<(), Box<dyn std::error::Error>> {
         std::thread::spawn(move || {
             let api_url = if let Ok(conn) = conn_arc_init.lock() {
                 conn.query_row("SELECT value FROM settings WHERE key = 'api_url';", [], |r| r.get::<_, String>(0))
-                    .unwrap_or_else(|_| "https://sumbangan.smage.my.id".to_string())
+                    .unwrap_or_default()
             } else {
-                "https://sumbangan.smage.my.id".to_string()
+                "".to_string()
             };
-            let ping_url = format!("{}/api/v1/ping", api_url.trim_end_matches('/'));
+            if api_url.trim().is_empty() {
+                return;
+            }
+            let ping_url = format!("{}/api/v1/ping", api_url.trim().trim_end_matches('/'));
             if let Ok(rt) = tokio::runtime::Runtime::new() {
                 rt.block_on(async {
                     let client = reqwest::Client::builder()
@@ -1510,11 +1513,17 @@ pub fn run_slint_app() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 };
 
-                let target_url = if api_url.trim().is_empty() {
-                    "https://sumbangan.smage.my.id".to_string()
-                } else {
-                    api_url.trim().to_string()
-                };
+                let target_url = api_url.trim().to_string();
+                if target_url.is_empty() {
+                    let app_weak_cb = app_weak_sync.clone();
+                    let _ = slint::invoke_from_event_loop(move || {
+                        if let Some(app) = app_weak_cb.upgrade() {
+                            app.set_is_online(false);
+                        }
+                    });
+                    std::thread::sleep(std::time::Duration::from_secs(10));
+                    continue;
+                }
 
                 let ping_url = format!("{}/api/v1/ping", target_url.trim_end_matches('/'));
                 let rt = tokio::runtime::Runtime::new();
@@ -1758,6 +1767,16 @@ fn show_toast(app: &AppWindow, message: &str, is_error: bool) {
 }
 
 
+pub fn get_term(conn: &Connection, key: &str, default: &str) -> String {
+    let setting_key = format!("term_{}", key);
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1 AND length(trim(value)) > 0 LIMIT 1;",
+        [&setting_key],
+        |r| r.get::<_, String>(0),
+    ).unwrap_or_else(|_| default.to_string())
+}
+
+
 fn update_branding_and_settings(app: &AppWindow, conn: &Connection) {
     let school_name: String = conn.query_row(
         "SELECT value FROM settings WHERE key = 'school_name';",
@@ -1778,6 +1797,24 @@ fn update_branding_and_settings(app: &AppWindow, conn: &Connection) {
         |r| r.get(0)
     ).unwrap_or_else(|_| "0".to_string());
     app.set_savings_enabled(savings_enabled.trim() == "1");
+
+    // Kamus Istilah & Nomenklatur Dinamis (Paritas Web 1:1)
+    let term_pembayaran = get_term(conn, "pembayaran", "Pembayaran");
+    let term_tagihan = get_term(conn, "tagihan", "Tagihan");
+    let term_siswa = get_term(conn, "siswa", "Siswa");
+    let term_kwitansi = get_term(conn, "kwitansi", "Kwitansi");
+    let term_tunggakan = get_term(conn, "tunggakan", "Tunggakan");
+
+    app.set_term_pembayaran(term_pembayaran.clone().into());
+    app.set_term_pembayaran_upper(term_pembayaran.to_uppercase().into());
+    app.set_term_pembayaran_lower(term_pembayaran.to_lowercase().into());
+    app.set_term_tagihan(term_tagihan.clone().into());
+    app.set_term_tagihan_lower(term_tagihan.to_lowercase().into());
+    app.set_term_siswa(term_siswa.clone().into());
+    app.set_term_siswa_lower(term_siswa.to_lowercase().into());
+    app.set_term_kwitansi(term_kwitansi.clone().into());
+    app.set_term_kwitansi_upper(term_kwitansi.to_uppercase().into());
+    app.set_term_tunggakan(term_tunggakan.into());
 
     if let Some(logo_path) = load_and_cache_school_logo(conn) {
         if let Ok(img) = slint::Image::load_from_path(&logo_path) {
@@ -2084,10 +2121,14 @@ fn generate_receipt_html(conn: &Connection, trx_code: &str, cashier_name: &str) 
         String::new()
     };
 
+    let term_pembayaran = get_term(conn, "pembayaran", "Pembayaran");
+    let term_siswa = get_term(conn, "siswa", "Siswa");
+    let term_kwitansi = get_term(conn, "kwitansi", "Kwitansi");
+
     let amount_header = if show_nominal {
-        "Jumlah"
+        format!("Jumlah / Status {}", term_pembayaran)
     } else {
-        "Jumlah / Status"
+        format!("Status {}", term_pembayaran)
     };
 
     let logo_left_html = if let Some(ref l) = logo_left {
@@ -2134,7 +2175,7 @@ fn generate_receipt_html(conn: &Connection, trx_code: &str, cashier_name: &str) 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kwitansi Pembayaran - {safe_trx_code}</title>
+    <title>{term_kwitansi} {term_pembayaran} - {safe_trx_code}</title>
     <style>
         @page {{
             size: A4 portrait;
@@ -2377,7 +2418,7 @@ fn generate_receipt_html(conn: &Connection, trx_code: &str, cashier_name: &str) 
 <body>
     <div class="no-print no-print-toolbar">
         <div class="title-info">
-            <strong>Pratinjau Kuitansi Pembayaran</strong>
+            <strong>Pratinjau {term_kwitansi} {term_pembayaran}</strong>
             <span>Siap dicetak menggunakan printer standar / printer biasa (A4).</span>
         </div>
         <div class="buttons">
@@ -2397,7 +2438,7 @@ fn generate_receipt_html(conn: &Connection, trx_code: &str, cashier_name: &str) 
             {logo_right_html}
         </div>
 
-        <div class="receipt-title">Kwitansi Pembayaran</div>
+        <div class="receipt-title">{term_kwitansi} {term_pembayaran}</div>
 
         <table class="receipt-table">
             <tr>
@@ -2407,7 +2448,7 @@ fn generate_receipt_html(conn: &Connection, trx_code: &str, cashier_name: &str) 
                 <td>: {created_at}</td>
             </tr>
             <tr>
-                <td class="label">Nama Siswa</td>
+                <td class="label">Nama {term_siswa}</td>
                 <td>: <strong>{student_nama}</strong></td>
                 <td class="label">NIS</td>
                 <td>: {student_nis}</td>
@@ -2465,6 +2506,9 @@ fn generate_receipt_html(conn: &Connection, trx_code: &str, cashier_name: &str) 
 </html>
 "##,
         safe_trx_code = html_escape(trx_code),
+        term_kwitansi = html_escape(&term_kwitansi),
+        term_pembayaran = html_escape(&term_pembayaran),
+        term_siswa = html_escape(&term_siswa),
         logo_left_html = logo_left_html,
         committee_html = committee_html,
         school_name = html_escape(&school_name),
@@ -2690,6 +2734,7 @@ fn load_student_details_ui(
         app.set_current_student(s_data);
 
         // 2. Data Assignments & Summary (Dikelompokkan per Tahun Ajaran & Pos Bayar)
+        let term_tagihan = get_term(&conn, "tagihan", "Tagihan");
         let mut assignments_vec = Vec::new();
         let mut total_tagihan = 0.0;
         let mut total_dibayar = 0.0;
@@ -2929,7 +2974,7 @@ fn load_student_details_ui(
                                 is_group_header: false,
                                 group_header_title: "".into(),
                                 is_section_header: true,
-                                section_title: "Tagihan Bebas".into(),
+                                section_title: format!("{} Bebas", term_tagihan).into(),
                                 section_count_text: format!("{} ITEM", bebas_rows.len()).into(),
                                 section_subtotal_text: format!("Subtotal: {}", format_idr(bebas_subtotal)).into(),
                                 is_active_year: is_active,
@@ -2992,7 +3037,7 @@ fn load_student_details_ui(
                                 is_group_header: false,
                                 group_header_title: "".into(),
                                 is_section_header: true,
-                                section_title: "Tagihan Bulanan".into(),
+                                section_title: format!("{} Bulanan", term_tagihan).into(),
                                 section_count_text: format!("{} ITEM", bulanan_rows.len()).into(),
                                 section_subtotal_text: format!("Subtotal: {}", format_idr(bulanan_subtotal)).into(),
                                 is_active_year: is_active,
