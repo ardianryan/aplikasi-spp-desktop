@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag versi rilis (contoh: v0.2.0)'
+        required: false
+        default: 'v0.2.0'
 
 jobs:
   release:
@@ -82,9 +87,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'Partisipasi Sekolah Desktop ${{ github.ref_name }}'
-          releaseBody: 'Silakan unduh file installer .exe / .msi (Windows) atau .dmg (macOS) di bawah ini.'
+          tagName: ${{ inputs.tag || github.ref_name }}
+          releaseName: 'Partisipasi Sekolah Desktop ${{ inputs.tag || github.ref_name }}'
+          releaseBody: 'Silakan unduh file pemasang (.exe / .msi untuk Windows, .dmg untuk macOS) di bawah ini.'
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
