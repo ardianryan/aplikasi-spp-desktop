@@ -237,7 +237,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
             update_branding_and_settings(&app, &conn);
 
             let api_url: String = conn.query_row("SELECT value FROM settings WHERE key = 'api_url';", [], |r| r.get(0))
-                .unwrap_or_else(|_| "http://sumbangan.smage.my.id".to_string());
+                .unwrap_or_else(|_| "https://sumbangan.smage.my.id".to_string());
             app.set_api_endpoint_url(api_url.into());
 
             let has_pin = crate::commands::has_offline_pin_conn(&conn).unwrap_or(false);
@@ -255,9 +255,9 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
         std::thread::spawn(move || {
             let api_url = if let Ok(conn) = conn_arc_init.lock() {
                 conn.query_row("SELECT value FROM settings WHERE key = 'api_url';", [], |r| r.get::<_, String>(0))
-                    .unwrap_or_else(|_| "http://sumbangan.smage.my.id".to_string())
+                    .unwrap_or_else(|_| "https://sumbangan.smage.my.id".to_string())
             } else {
-                "http://sumbangan.smage.my.id".to_string()
+                "https://sumbangan.smage.my.id".to_string()
             };
             let ping_url = format!("{}/api/v1/ping", api_url.trim_end_matches('/'));
             if let Ok(rt) = tokio::runtime::Runtime::new() {
@@ -376,11 +376,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
         process_deep_link_url(url, &app, &conn_arc, &state);
     }
 
-    // ==========================================
-    // EVENT LISTENERS & CALLBACKS
-    // ==========================================
-
-    // A. Tab Navigation Changed
+    // Event listeners & callbacks
     {
         let conn_arc = Arc::clone(&conn_arc);
         let app_weak = app_weak.clone();
@@ -1013,7 +1009,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                 return;
             }
             if !raw_url.starts_with("http://") && !raw_url.starts_with("https://") {
-                raw_url = format!("http://{}", raw_url);
+                raw_url = format!("https://{}", raw_url);
             }
             let clean_url = raw_url.trim_end_matches('/').to_string();
 
@@ -1206,7 +1202,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                 return;
             }
             if !raw_url.starts_with("http://") && !raw_url.starts_with("https://") {
-                raw_url = format!("http://{}", raw_url);
+                raw_url = format!("https://{}", raw_url);
             }
             let clean_url = raw_url.trim_end_matches('/').to_string();
 
@@ -1242,7 +1238,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                 return;
             }
             if !raw_url.starts_with("http://") && !raw_url.starts_with("https://") {
-                raw_url = format!("http://{}", raw_url);
+                raw_url = format!("https://{}", raw_url);
             }
             let clean_url = raw_url.trim_end_matches('/').to_string();
 
@@ -1353,7 +1349,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                 return;
             }
             if !raw_url.starts_with("http://") && !raw_url.starts_with("https://") {
-                raw_url = format!("http://{}", raw_url);
+                raw_url = format!("https://{}", raw_url);
             }
             let clean_url = raw_url.trim_end_matches('/').to_string();
 
@@ -1390,11 +1386,11 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                         app.set_is_testing_wizard(false);
                         match res {
                             Ok(msg) => {
-                                app.set_wizard_test_message(format!("✅ {}", msg).into());
+                                app.set_wizard_test_message(format!("Berhasil: {}", msg).into());
                                 app.set_wizard_test_success(true);
                             }
                             Err(e) => {
-                                app.set_wizard_test_message(format!("❌ Sambungan gagal: {}", e).into());
+                                app.set_wizard_test_message(format!("Sambungan gagal: {}", e).into());
                                 app.set_wizard_test_success(false);
                             }
                         }
@@ -1411,7 +1407,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
         app.on_finish_wizard(move |url_slint| {
             let mut raw_url = url_slint.to_string().trim().to_string();
             if !raw_url.starts_with("http://") && !raw_url.starts_with("https://") {
-                raw_url = format!("http://{}", raw_url);
+                raw_url = format!("https://{}", raw_url);
             }
             let clean_url = raw_url.trim_end_matches('/').to_string();
 
@@ -1472,7 +1468,7 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
                 };
 
                 let target_url = if api_url.trim().is_empty() {
-                    "http://sumbangan.smage.my.id".to_string()
+                    "https://sumbangan.smage.my.id".to_string()
                 } else {
                     api_url.trim().to_string()
                 };
@@ -1575,10 +1571,6 @@ pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
     app.run()?;
     Ok(())
 }
-
-// ==========================================
-// UI DATA POPULATORS & HELPERS
-// ==========================================
 
 fn base64_decode(input: &str) -> Option<Vec<u8>> {
     let clean: String = input.chars().filter(|c| !c.is_whitespace()).collect();
@@ -2008,9 +2000,11 @@ fn send_receipt_to_printer(conn: &Connection, trx_code: &str, cashier_name: &str
     }
     #[cfg(windows)]
     {
+        let quoted_path = format!("\"{}\"", tmp_path.display());
         let _ = std::process::Command::new("cmd")
-            .args(["/C", "print", tmp_path.to_str().unwrap_or("")])
-            .spawn();
+            .args(["/C", "print", &quoted_path])
+            .status();
+        let _ = std::fs::remove_file(&tmp_path);
     }
 
     Ok(())
@@ -2610,7 +2604,7 @@ fn process_deep_link_url(
     if !raw_url.starts_with("partisipasi-sekolah://") && !raw_url.starts_with("partisipasi://") {
         return;
     }
-    println!("[INFO] Memproses deep-link otorisasi: {}", raw_url);
+    println!("[INFO] Memproses deep-link otorisasi URL...");
     let query_str = raw_url.split_once('?').map(|x| x.1).unwrap_or("");
     let mut token = String::new();
     let mut nama = String::new();

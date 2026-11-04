@@ -135,7 +135,6 @@ pub struct SavingsTransaction {
     pub created_at: String,
 }
 
-// 1. Pencarian Siswa (POS)
 #[tauri::command]
 pub fn search_students(query: String, status: String, state: State<'_, DbState>) -> Result<Vec<StudentInfo>, String> {
     let conn = state.conn.lock().unwrap();
@@ -171,12 +170,10 @@ pub fn search_students(query: String, status: String, state: State<'_, DbState>)
     Ok(list)
 }
 
-// 2. Detail Pembayaran & Buku Tabungan Siswa
 #[tauri::command]
 pub fn get_student_details(student_id: String, state: State<'_, DbState>) -> Result<StudentDetails, String> {
     let conn = state.conn.lock().unwrap();
     
-    // a. Info Siswa
     let student = conn.query_row(
         "SELECT s.id, s.nis, s.nisn, s.nama, c.name as kelas 
          FROM students s
@@ -194,7 +191,6 @@ pub fn get_student_details(student_id: String, state: State<'_, DbState>) -> Res
         }
     ).map_err(|e| format!("Siswa tidak ditemukan: {}", e))?;
     
-    // b. Ambil riwayat cicilan (installments) dari payment_details untuk siswa bersangkutan
     let mut installments_map: std::collections::HashMap<String, Vec<InstallmentItem>> = std::collections::HashMap::new();
     if let Ok(mut inst_stmt) = conn.prepare(
         "SELECT pd.payment_assignment_id, pd.amount, pd.created_at
@@ -222,7 +218,6 @@ pub fn get_student_details(student_id: String, state: State<'_, DbState>) -> Res
         }
     }
 
-    // c. Tagihan / Assignments
     let mut stmt = conn.prepare(
         "SELECT a.id, t.name, t.type, a.month, a.amount, a.paid_amount, a.relief_amount, a.status, a.academic_year_id, y.name as academic_year_name
          FROM payment_assignments a
@@ -319,7 +314,6 @@ pub fn get_student_details(student_id: String, state: State<'_, DbState>) -> Res
         order_a.cmp(&order_b)
     });
     
-    // c. Riwayat Pembayaran
     let mut stmt = conn.prepare(
         "SELECT id, transaction_code, total_amount, payment_method_name, notes, created_at
          FROM payments
@@ -345,14 +339,12 @@ pub fn get_student_details(student_id: String, state: State<'_, DbState>) -> Res
         }
     }
     
-    // d. Saldo Tabungan Siswa
     let savings_balance: f64 = conn.query_row(
         "SELECT balance FROM savings WHERE student_id = ?;",
         [&student_id],
         |row| row.get(0),
     ).unwrap_or(0.0);
 
-    // e. Detect unpaid previous academic years
     let active_year_id: Option<String> = conn.query_row(
         "SELECT id FROM academic_years WHERE is_active = 1 LIMIT 1;",
         [],
@@ -400,12 +392,10 @@ pub fn save_payment(
     let mut conn = state.conn.lock().unwrap();
     let tx = conn.transaction().map_err(|e| format!("Gagal memulai transaksi DB: {}", e))?;
     
-    // a. Generate Transaction Code Unik
     let date_str = Local::now().format("%Y%m%d").to_string();
     let random_hex = format!("{:x}", Uuid::new_v4().as_u128() % 16777215); // 6 hex digits
     let trx_code = format!("TRX-{}-{}-{}", loket_id.to_uppercase(), date_str, random_hex);
     
-    // b. Simpan Header Pembayaran (payments)
     let payment_id = Uuid::new_v4().to_string();
     let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     
@@ -425,7 +415,6 @@ pub fn save_payment(
         ]
     ).map_err(|e| format!("Gagal menyimpan header transaksi: {}", e))?;
     
-    // c. Simpan Rincian Pembayaran (payment_details) & Update Assignments lokal
     for item in &items {
         let detail_id = Uuid::new_v4().to_string();
         tx.execute(
@@ -470,7 +459,6 @@ pub fn save_payment(
     Ok(trx_code)
 }
 
-// 4. Tabungan Murid (Mutasi Setor / Tarik)
 #[tauri::command]
 pub fn save_savings_transaction(
     student_id: String,

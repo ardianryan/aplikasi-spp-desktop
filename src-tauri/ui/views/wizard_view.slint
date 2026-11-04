@@ -4,7 +4,7 @@ export component WizardView inherits Rectangle {
     background: Theme.bg-primary;
 
     in-out property <int> step: 1;
-    in-out property <string> api-url: "http://sumbangan.smage.my.id";
+    in-out property <string> api-url: "https://sumbangan.smage.my.id";
     in property <bool> is-testing: false;
     in property <string> test-message: "";
     in property <bool> test-success: false;
@@ -97,7 +97,6 @@ export component WizardView inherits Rectangle {
                         }
                     }
 
-                    // ── LANGKAH 1: Pengenalan Sistem ──
                     if root.step == 1: VerticalLayout {
                         spacing: 18px;
 
@@ -111,7 +110,7 @@ export component WizardView inherits Rectangle {
                                 horizontal-alignment: center;
                             }
                             Text {
-                                text: "Aplikasi terminal kasir POS & buku tabungan siswa mandiri. Berjalan 100% cepat tanpa ketergantungan internet dengan failover sinkronisasi otomatis.";
+                                text: "Aplikasi kasir dan pembayaran sumbangan siswa. Dapat digunakan saat tidak ada koneksi internet dan otomatis tersinkronisasi saat tersambung kembali ke jaringan.";
                                 font-size: 12px;
                                 color: Theme.text-muted;
                                 horizontal-alignment: center;
@@ -200,7 +199,6 @@ export component WizardView inherits Rectangle {
                         }
                     }
 
-                    // ── LANGKAH 2: Sambungan Peladen Web ──
                     if root.step == 2: VerticalLayout {
                         spacing: 16px;
 
@@ -327,7 +325,6 @@ export component WizardView inherits Rectangle {
                         }
                     }
 
-                    // ── LANGKAH 3: Aktivasi & Penyiapan Selesai ──
                     if root.step == 3: VerticalLayout {
                         spacing: 18px;
 

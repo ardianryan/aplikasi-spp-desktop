@@ -3,7 +3,7 @@ import { Theme } from "../theme.slint";
 export component SyncView inherits Rectangle {
     background: Theme.bg-primary;
 
-    in-out property <string> base-url: "http://";
+    in-out property <string> base-url: "https://";
     in property <string> user-name: "";
     in property <string> user-role: "";
     in property <bool> is-authenticated: false;
@@ -61,16 +61,16 @@ export component SyncView inherits Rectangle {
                 spacing: 14px;
 
                 Text {
-                    text: "Konfigurasi Peladen Cloud";
+                    text: "Pengaturan Sambungan Server";
                     font-size: 14px;
                     font-weight: 700;
                     color: Theme.text-main;
                 }
 
-                // 1. URL Server API Input
+                // URL Server API Input
                 VerticalLayout {
                     spacing: 4px;
-                    Text { text: "Alamat Web Peladen Utama (Endpoint):"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
+                    Text { text: "Alamat Server Utama:"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
                     Rectangle {
                         height: 38px;
                         background: Theme.bg-primary;

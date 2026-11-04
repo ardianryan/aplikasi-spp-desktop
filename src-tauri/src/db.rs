@@ -69,9 +69,12 @@ pub fn init_db_standalone() -> Result<Connection, String> {
     if let Err(e) = test_read {
         let err_str = e.to_string();
         if err_str.contains("file is not a database") || err_str.contains("NOTADB") {
-            println!("DB lama tidak terenkripsi, salah passphrase, atau corrupt. Membuat ulang database terenkripsi baru...");
+            println!("DB lama tidak terenkripsi, salah passphrase, atau corrupt. Menyimpan salinan cadangan dan membuat ulang database...");
             drop(conn);
-            let _ = fs::remove_file(&db_path);
+            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+            let backup_path = db_path.with_extension(format!("corrupt_backup_{}.db", timestamp));
+            println!("Menyimpan cadangan basis data sebelumnya ke: {:?}", backup_path);
+            let _ = fs::rename(&db_path, &backup_path);
 
             let conn_new = Connection::open(&db_path)
                 .map_err(|e| format!("Gagal membuka database SQLite baru: {}", e))?;
@@ -123,9 +126,12 @@ pub fn init_db(app_handle: &AppHandle) -> Result<Connection, String> {
     if let Err(e) = test_read {
         let err_str = e.to_string();
         if err_str.contains("file is not a database") || err_str.contains("NOTADB") {
-            println!("DB lama tidak terenkripsi, salah passphrase, atau corrupt. Membuat ulang database terenkripsi baru...");
+            println!("DB lama tidak terenkripsi, salah passphrase, atau corrupt. Menyimpan salinan cadangan dan membuat ulang database...");
             drop(conn);
-            let _ = fs::remove_file(&db_path);
+            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
+            let backup_path = db_path.with_extension(format!("corrupt_backup_{}.db", timestamp));
+            println!("Menyimpan cadangan basis data sebelumnya ke: {:?}", backup_path);
+            let _ = fs::rename(&db_path, &backup_path);
             
             let conn_new = Connection::open(&db_path)
                 .map_err(|e| format!("Gagal membuka database SQLite baru: {}", e))?;
