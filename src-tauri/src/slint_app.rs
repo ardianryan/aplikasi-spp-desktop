@@ -982,7 +982,7 @@ pub fn run_slint_app() -> Result<(), Box<dyn std::error::Error>> {
                     let cashier_name = state.lock().unwrap().user_nama.clone();
                     match send_receipt_to_printer(&conn, &trx_code, &cashier_name) {
                         Ok(_) => {
-                            show_toast(&app, "Kwitansi berhasil dikirim ke printer kasir.", false);
+                            show_toast(&app, "Membuka dialog cetak kuitansi...", false);
                         }
                         Err(e) => {
                             show_toast(&app, &format!("Info Cetak: {}", e), true);
@@ -1757,32 +1757,6 @@ fn show_toast(app: &AppWindow, message: &str, is_error: bool) {
     });
 }
 
-#[cfg(unix)]
-fn get_cups_printer() -> Option<String> {
-    // 1. Coba deteksi printer default sistem
-    if let Ok(output) = std::process::Command::new("lpstat").arg("-d").output() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        if let Some(pos) = stdout.find(':') {
-            let dest = stdout[pos + 1..].trim();
-            if !dest.is_empty() && !dest.contains("no system default") && !dest.contains("No destinations") {
-                return Some(dest.to_string());
-            }
-        }
-    }
-    // 2. Coba deteksi printer aktif pertama
-    if let Ok(output) = std::process::Command::new("lpstat").arg("-p").output() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        for line in stdout.lines() {
-            if line.starts_with("printer ") {
-                let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() >= 2 {
-                    return Some(parts[1].to_string());
-                }
-            }
-        }
-    }
-    None
-}
 
 fn update_branding_and_settings(app: &AppWindow, conn: &Connection) {
     let school_name: String = conn.query_row(
@@ -1954,8 +1928,38 @@ fn populate_receipt_modal(
     Ok(())
 }
 
-fn send_receipt_to_printer(conn: &Connection, trx_code: &str, cashier_name: &str) -> Result<(), String> {
-    // 1. Query data transaksi
+fn get_setting_val(conn: &Connection, key: &str, default_val: &str) -> String {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1 LIMIT 1;",
+        [key],
+        |r| r.get(0),
+    ).unwrap_or_else(|_| default_val.to_string())
+}
+
+fn get_image_data_uri(conn: &Connection, key: &str) -> Option<String> {
+    let raw = get_setting_val(conn, key, "");
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.starts_with("data:image/") {
+        Some(trimmed.to_string())
+    } else if trimmed.len() > 60 && !trimmed.starts_with("http") && !trimmed.starts_with('/') {
+        Some(format!("data:image/png;base64,{}", trimmed))
+    } else {
+        None
+    }
+}
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+     .replace('<', "&lt;")
+     .replace('>', "&gt;")
+     .replace('"', "&quot;")
+     .replace('\'', "&#39;")
+}
+
+fn generate_receipt_html(conn: &Connection, trx_code: &str, cashier_name: &str) -> Result<String, String> {
     let (payment_id, created_at, payment_method_name, total_amount, notes, student_nama, student_nis, student_kelas) = conn.query_row(
         "SELECT p.id, p.created_at, COALESCE(p.payment_method_name, 'Tunai'), p.total_amount, p.notes, s.nama, s.nis, COALESCE(s.kelas, c.name, '-')
          FROM payments p
@@ -1977,11 +1981,31 @@ fn send_receipt_to_printer(conn: &Connection, trx_code: &str, cashier_name: &str
         }
     ).map_err(|e| format!("Transaksi tidak ditemukan: {}", e))?;
 
-    let school_name: String = conn.query_row("SELECT value FROM settings WHERE key = 'school_name';", [], |r| r.get(0)).unwrap_or_else(|_| "Nama Sekolah".into());
-    let school_address: String = conn.query_row("SELECT value FROM settings WHERE key = 'school_address';", [], |r| r.get(0)).unwrap_or_else(|_| "".into());
+    let school_name = get_setting_val(conn, "school_name", "Nama Sekolah");
+    let school_address = get_setting_val(conn, "school_address", "Alamat Sekolah");
+    let committee_name = get_setting_val(conn, "committee_name", "");
+    let show_nominal = get_setting_val(conn, "show_nominal_receipt", "1") != "0";
+    let show_nominal_bebas = get_setting_val(conn, "show_nominal_receipt_bebas", "1") != "0";
+
+    let logo_left = get_image_data_uri(conn, "logo_left")
+        .or_else(|| get_image_data_uri(conn, "app_logo"))
+        .or_else(|| {
+            load_and_cache_school_logo(conn).and_then(|p| {
+                std::fs::read(&p).ok().map(|b| format!("data:image/png;base64,{}", crate::commands::base64_encode(&b)))
+            })
+        });
+
+    let logo_right = get_image_data_uri(conn, "logo_right");
+
+    let stamp_img = get_image_data_uri(conn, "stamp_image")
+        .or_else(|| {
+            load_and_cache_stamp_image(conn).and_then(|p| {
+                std::fs::read(&p).ok().map(|b| format!("data:image/png;base64,{}", crate::commands::base64_encode(&b)))
+            })
+        });
 
     let mut stmt = conn.prepare(
-        "SELECT t.name, a.month, d.amount, y.name
+        "SELECT t.name, t.type, a.month, d.amount, y.name
          FROM payment_details d
          JOIN payment_assignments a ON d.payment_assignment_id = a.id
          JOIN payment_types t ON a.payment_type_id = t.id
@@ -1998,96 +2022,509 @@ fn send_receipt_to_printer(conn: &Connection, trx_code: &str, cashier_name: &str
         }
     };
 
-    let items: Vec<(String, Option<i32>, f64, Option<String>)> = stmt.query_map([&payment_id], |row| {
+    let items_raw: Vec<(String, String, Option<i32>, f64, Option<String>)> = stmt.query_map([&payment_id], |row| {
         Ok((
             row.get::<_, String>(0)?,
-            row.get::<_, Option<i32>>(1)?,
-            row.get::<_, f64>(2)?,
-            row.get::<_, Option<String>>(3)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<i32>>(2)?,
+            row.get::<_, f64>(3)?,
+            row.get::<_, Option<String>>(4)?,
         ))
     }).map_err(|e| e.to_string())?.flatten().collect();
 
-    let unique_years: std::collections::HashSet<String> = items.iter()
-        .filter_map(|item| item.3.clone())
+    let unique_years: std::collections::HashSet<String> = items_raw.iter()
+        .filter_map(|item| item.4.clone())
         .collect();
     let show_year_suffix = unique_years.len() > 1;
 
-    // Dokumen Struk Monospace Standar Printer Kasir (Thermal POS / Dot Matrix)
-    let mut txt = String::new();
-    txt.push_str("========================================\n");
-    txt.push_str(&format!("{:^40}\n", school_name));
-    if !school_address.is_empty() {
-        txt.push_str(&format!("{:^40}\n", school_address));
-    }
-    txt.push_str("========================================\n");
-    txt.push_str(&format!("{:^40}\n", "KWITANSI PEMBAYARAN"));
-    txt.push_str("----------------------------------------\n");
-    txt.push_str(&format!("No. Transaksi : {}\n", trx_code));
-    txt.push_str(&format!("Tanggal       : {}\n", created_at));
-    txt.push_str(&format!("Nama Siswa    : {}\n", student_nama));
-    txt.push_str(&format!("NIS / Kelas   : {} / {}\n", student_nis.unwrap_or_else(|| "-".into()), student_kelas));
-    txt.push_str(&format!("Metode Bayar  : {}\n", payment_method_name));
-    txt.push_str("----------------------------------------\n");
-    txt.push_str(&format!("{:<3}{:<25}{:>12}\n", "No", "Keterangan", "Jumlah"));
-    txt.push_str("----------------------------------------\n");
-    for (i, itm) in items.iter().enumerate() {
-        let mut desc = itm.0.clone();
-        if let Some(m) = itm.1 {
+    let mut items_rows_html = String::new();
+    let mut visible_nominal_total = 0.0;
+
+    for (i, item) in items_raw.iter().enumerate() {
+        let is_bebas = item.1 == "bebas";
+        let show_amount_for_row = show_nominal || (is_bebas && show_nominal_bebas);
+        if show_amount_for_row {
+            visible_nominal_total += item.3;
+        }
+
+        let mut desc = item.0.clone();
+        if let Some(m) = item.2 {
             let mn = month_name(m);
-            if !mn.is_empty() { desc.push_str(&format!(" ({})", mn)); }
+            if !mn.is_empty() {
+                desc.push_str(&format!(" ({})", mn));
+            }
         }
         if show_year_suffix {
-            if let Some(ref y) = itm.3 {
+            if let Some(ref y) = item.4 {
                 desc.push_str(&format!(" (T.A {})", y));
             }
         }
-        if desc.len() > 24 { desc.truncate(24); }
-        txt.push_str(&format!("{:<3}{:<25}{:>12}\n", i + 1, desc, format_idr(itm.2)));
+
+        let amount_cell = if show_amount_for_row {
+            format!("<td class=\"amount\">{}</td>", format_idr(item.3))
+        } else {
+            "<td><span class=\"badge-lunas\">Sudah Lunas</span></td>".to_string()
+        };
+
+        items_rows_html.push_str(&format!(
+            "<tr><td style=\"text-align: center;\">{}</td><td>{}</td>{}</tr>\n",
+            i + 1,
+            html_escape(&desc),
+            amount_cell
+        ));
     }
-    txt.push_str("----------------------------------------\n");
-    txt.push_str(&format!("{:<28}{:>12}\n", "TOTAL PEMBAYARAN:", format_idr(total_amount)));
-    txt.push_str("----------------------------------------\n");
-    if let Some(ref n) = notes {
-        if !n.is_empty() {
-            txt.push_str(&format!("Catatan: {}\n", n));
+
+    let tfoot_html = if show_nominal || visible_nominal_total > 0.0 {
+        let grand_total = if show_nominal { total_amount } else { visible_nominal_total };
+        format!(
+            "<tfoot><tr><td colspan=\"2\" style=\"text-align: right; font-weight: 700;\">Total Pembayaran</td><td class=\"amount\">{}</td></tr></tfoot>",
+            format_idr(grand_total)
+        )
+    } else {
+        String::new()
+    };
+
+    let amount_header = if show_nominal {
+        "Jumlah"
+    } else {
+        "Jumlah / Status"
+    };
+
+    let logo_left_html = if let Some(ref l) = logo_left {
+        format!("<img src=\"{}\" alt=\"Logo\" class=\"receipt-logo\">", l)
+    } else {
+        String::new()
+    };
+
+    let logo_right_html = if let Some(ref r) = logo_right {
+        format!("<img src=\"{}\" alt=\"Logo\" class=\"receipt-logo\">", r)
+    } else {
+        String::new()
+    };
+
+    let committee_html = if !committee_name.trim().is_empty() {
+        format!("<h2>{}</h2>", html_escape(committee_name.trim()))
+    } else {
+        String::new()
+    };
+
+    let notes_html = if let Some(ref n) = notes {
+        let n_trimmed = n.trim();
+        if !n_trimmed.is_empty() {
+            format!("<div class=\"notes-section\"><strong>Catatan:</strong> {}</div>", html_escape(n_trimmed))
+        } else {
+            String::new()
         }
-    }
-    txt.push_str(&format!("Kasir: {}\n", if cashier_name.is_empty() { "Petugas Kasir" } else { cashier_name }));
-    txt.push_str("========================================\n");
-    txt.push_str(&format!("{:^40}\n", "Bukti Pembayaran yang Sah"));
-    txt.push_str("\n\n\n\n\x1b\x69"); // Feed and Paper cut command
+    } else {
+        String::new()
+    };
+
+    let stamp_html = if let Some(ref s) = stamp_img {
+        format!("<img src=\"{}\" alt=\"Stempel\" class=\"receipt-stamp-img\">", s)
+    } else {
+        String::new()
+    };
+
+    let receipt_date = format_indo_date(&created_at);
+    let cashier_display = if cashier_name.trim().is_empty() { "Petugas Kasir" } else { cashier_name.trim() };
+    let now_str = chrono::Local::now().format("%d/%m/%Y %H:%M").to_string();
+
+    let html = format!(r##"<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kwitansi Pembayaran - {safe_trx_code}</title>
+    <style>
+        @page {{
+            size: A4 portrait;
+            margin: 15mm;
+        }}
+        * {{
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+        }}
+        body {{
+            background-color: #f1f5f9;
+            color: #0f172a;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            margin: 0;
+            padding: 24px;
+        }}
+        .no-print-toolbar {{
+            max-width: 800px;
+            margin: 0 auto 16px auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #002b59;
+            color: #ffffff;
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+        }}
+        .no-print-toolbar .title-info strong {{
+            display: block;
+            font-size: 14px;
+            font-weight: 700;
+        }}
+        .no-print-toolbar .title-info span {{
+            font-size: 11px;
+            color: #cbd5e1;
+        }}
+        .no-print-toolbar .buttons {{
+            display: flex;
+            gap: 10px;
+        }}
+        .btn {{
+            cursor: pointer;
+            border: none;
+            padding: 8px 18px;
+            font-size: 12px;
+            font-weight: 700;
+            border-radius: 6px;
+            transition: all 0.15s ease;
+        }}
+        .btn-print {{
+            background: #008f5d;
+            color: #ffffff;
+        }}
+        .btn-print:hover {{
+            background: #006b45;
+        }}
+        .btn-close {{
+            background: #e2e8f0;
+            color: #1e293b;
+        }}
+        .btn-close:hover {{
+            background: #cbd5e1;
+        }}
+        .receipt {{
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 36px 40px;
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            border: 1px solid #e2e8f0;
+        }}
+        .receipt-header {{
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            padding-bottom: 14px;
+            border-bottom: 3px double #002b59;
+            margin-bottom: 22px;
+        }}
+        .receipt-logo {{
+            width: 72px;
+            height: 72px;
+            object-fit: contain;
+        }}
+        .receipt-school {{
+            flex: 1;
+            text-align: center;
+        }}
+        .receipt-school h2 {{
+            font-size: 1.15rem;
+            margin: 0 0 4px 0;
+            color: #002b59;
+            font-weight: 800;
+            letter-spacing: 0.02em;
+        }}
+        .receipt-school p {{
+            font-size: 0.78rem;
+            margin: 0;
+            color: #475569;
+            line-height: 1.35;
+        }}
+        .receipt-title {{
+            text-align: center;
+            font-size: 1.05rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 20px;
+            color: #002b59;
+        }}
+        .receipt-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }}
+        .receipt-table td {{
+            padding: 4px 6px;
+            font-size: 0.85rem;
+            vertical-align: top;
+        }}
+        .receipt-table .label {{
+            width: 120px;
+            font-weight: 600;
+            color: #475569;
+        }}
+        .receipt-items {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }}
+        .receipt-items th,
+        .receipt-items td {{
+            border: 1px solid #cbd5e1;
+            padding: 8px 12px;
+            font-size: 0.82rem;
+        }}
+        .receipt-items th {{
+            background: #f8fafc;
+            font-weight: 700;
+            text-align: left;
+            color: #0f172a;
+        }}
+        .receipt-items .amount {{
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+        }}
+        .receipt-items tfoot td {{
+            font-weight: 700;
+            border-top: 2px solid #002b59;
+            background: #fafafa;
+        }}
+        .badge-lunas {{
+            display: inline-block;
+            background: #dcfce7;
+            color: #15803d;
+            font-size: 11px;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid #bbf7d0;
+        }}
+        .notes-section {{
+            font-size: 0.82rem;
+            margin-bottom: 20px;
+            color: #334155;
+            padding: 8px 14px;
+            background: #f8fafc;
+            border-radius: 6px;
+            border-left: 3px solid #002b59;
+        }}
+        .receipt-footer {{
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 24px;
+        }}
+        .receipt-sign-container {{
+            position: relative;
+            min-height: 130px;
+            width: 240px;
+            text-align: center;
+        }}
+        .receipt-stamp-img {{
+            position: absolute;
+            left: 10px;
+            top: 15px;
+            width: 125px;
+            object-fit: contain;
+            opacity: 0.82;
+            z-index: 1;
+            transform: rotate(-10deg);
+            pointer-events: none;
+        }}
+        .receipt-sign-text {{
+            position: relative;
+            z-index: 2;
+            font-size: 0.82rem;
+            line-height: 1.4;
+        }}
+        .receipt-sign-cashier {{
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 2;
+            border-top: 1px solid #0f172a;
+            padding-top: 4px;
+            font-size: 0.85rem;
+            font-weight: 700;
+        }}
+        .receipt-timestamp {{
+            text-align: center;
+            font-size: 0.68rem;
+            color: #94a3b8;
+            margin-top: 32px;
+        }}
+
+        @media print {{
+            body {{
+                background: white !important;
+                padding: 0 !important;
+            }}
+            .no-print {{
+                display: none !important;
+            }}
+            .receipt {{
+                max-width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+                border-radius: 0 !important;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="no-print no-print-toolbar">
+        <div class="title-info">
+            <strong>Pratinjau Kuitansi Pembayaran</strong>
+            <span>Siap dicetak menggunakan printer standar / printer biasa (A4).</span>
+        </div>
+        <div class="buttons">
+            <button class="btn btn-print" onclick="window.print()">Cetak (Buka Dialog Print)</button>
+            <button class="btn btn-close" onclick="window.close()">Tutup</button>
+        </div>
+    </div>
+
+    <div class="receipt">
+        <div class="receipt-header">
+            {logo_left_html}
+            <div class="receipt-school">
+                {committee_html}
+                <h2>{school_name}</h2>
+                <p>{school_address}</p>
+            </div>
+            {logo_right_html}
+        </div>
+
+        <div class="receipt-title">Kwitansi Pembayaran</div>
+
+        <table class="receipt-table">
+            <tr>
+                <td class="label">No. Transaksi</td>
+                <td>: <strong>{trx_code}</strong></td>
+                <td class="label">Tanggal</td>
+                <td>: {created_at}</td>
+            </tr>
+            <tr>
+                <td class="label">Nama Siswa</td>
+                <td>: <strong>{student_nama}</strong></td>
+                <td class="label">NIS</td>
+                <td>: {student_nis}</td>
+            </tr>
+            <tr>
+                <td class="label">Kelas</td>
+                <td>: {student_kelas}</td>
+                <td class="label">Metode Bayar</td>
+                <td>: <strong>{payment_method_name}</strong></td>
+            </tr>
+        </table>
+
+        <table class="receipt-items">
+            <thead>
+                <tr>
+                    <th style="width: 40px; text-align: center;">No</th>
+                    <th>Keterangan</th>
+                    <th style="width: 170px;" class="amount">{amount_header}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {items_rows_html}
+            </tbody>
+            {tfoot_html}
+        </table>
+
+        {notes_html}
+
+        <div class="receipt-footer">
+            <div class="receipt-sign-container">
+                {stamp_html}
+                <div class="receipt-sign-text">
+                    <p style="margin: 0;">Mojokerto, {receipt_date}</p>
+                    <p style="margin: 0; font-weight: 700;">Petugas Penerima,</p>
+                </div>
+                <div class="receipt-sign-cashier">
+                    {cashier_display}
+                </div>
+            </div>
+        </div>
+
+        <p class="receipt-timestamp">
+            Dicetak pada {now_str} • {school_name}
+        </p>
+    </div>
+
+    <script>
+        window.addEventListener('load', function() {{
+            setTimeout(function() {{
+                window.print();
+            }}, 250);
+        }});
+    </script>
+</body>
+</html>
+"##,
+        safe_trx_code = html_escape(trx_code),
+        logo_left_html = logo_left_html,
+        committee_html = committee_html,
+        school_name = html_escape(&school_name),
+        school_address = html_escape(&school_address),
+        logo_right_html = logo_right_html,
+        trx_code = html_escape(trx_code),
+        created_at = html_escape(&created_at),
+        student_nama = html_escape(&student_nama),
+        student_nis = html_escape(&student_nis.unwrap_or_else(|| "-".to_string())),
+        student_kelas = html_escape(&student_kelas),
+        payment_method_name = html_escape(&payment_method_name),
+        amount_header = amount_header,
+        items_rows_html = items_rows_html,
+        tfoot_html = tfoot_html,
+        notes_html = notes_html,
+        stamp_html = stamp_html,
+        receipt_date = html_escape(&receipt_date),
+        cashier_display = html_escape(cashier_display),
+        now_str = html_escape(&now_str)
+    );
+
+    Ok(html)
+}
+
+fn send_receipt_to_printer(conn: &Connection, trx_code: &str, cashier_name: &str) -> Result<(), String> {
+    let html_content = generate_receipt_html(conn, trx_code, cashier_name)?;
 
     let safe_trx_code: String = trx_code.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
-    let tmp_path = std::env::temp_dir().join(format!("kwitansi_{}.txt", safe_trx_code));
-    std::fs::write(&tmp_path, txt).map_err(|e| format!("Gagal buat spooler kwitansi: {}", e))?;
+    let tmp_path = std::env::temp_dir().join(format!("kwitansi_{}.html", safe_trx_code));
+    std::fs::write(&tmp_path, html_content)
+        .map_err(|e| format!("Gagal membuat berkas kuitansi cetak: {}", e))?;
 
-    // Jalankan adapter pencetakan CUPS (lpr) langsung tanpa membuka web browser
-    #[cfg(unix)]
-    {
-        let printer = get_cups_printer();
-        let mut cmd = std::process::Command::new("lpr");
-        if let Some(ref p) = printer {
-            cmd.arg("-P").arg(p);
-        }
-        cmd.arg(&tmp_path);
-        let output = cmd.output().map_err(|e| format!("Perintah lpr gagal: {}", e))?;
-        let _ = std::fs::remove_file(&tmp_path);
-
-        if !output.status.success() {
-            let err_msg = String::from_utf8_lossy(&output.stderr);
-            if err_msg.contains("No default destination") || err_msg.contains("no destination") || err_msg.contains("no system default") {
-                return Err("Printer kasir belum terpasang di sistem operasi. Sambungkan printer kasir USB/LAN atau atur printer default di sistem.".to_string());
-            }
-            return Err(format!("Adapter printer CUPS: {}", err_msg.trim()));
-        }
-    }
+    // Buka berkas HTML menggunakan peramban/penampil default sistem untuk memicu dialog print asli
     #[cfg(windows)]
     {
-        let quoted_path = format!("\"{}\"", tmp_path.display());
-        let _ = std::process::Command::new("cmd")
-            .args(["/C", "print", &quoted_path])
-            .status();
-        let _ = std::fs::remove_file(&tmp_path);
+        let opened = open::that(&tmp_path);
+        if opened.is_err() {
+            let rundll = std::process::Command::new("rundll32.exe")
+                .args(["url.dll,FileProtocolHandler", &tmp_path.display().to_string()])
+                .spawn();
+            if rundll.is_err() {
+                let _ = std::process::Command::new("cmd")
+                    .args(["/C", "start", "", &tmp_path.display().to_string()])
+                    .spawn();
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if open::that(&tmp_path).is_err() {
+            let _ = std::process::Command::new("open").arg(&tmp_path).spawn();
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if open::that(&tmp_path).is_err() {
+            let _ = std::process::Command::new("xdg-open").arg(&tmp_path).spawn();
+        }
     }
 
     Ok(())

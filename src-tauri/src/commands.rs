@@ -1535,7 +1535,7 @@ async fn fetch_image_as_base64(
 }
 
 /// Simple base64 encoder
-fn base64_encode(input: &[u8]) -> String {
+pub(crate) fn base64_encode(input: &[u8]) -> String {
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::with_capacity((input.len() + 2) / 3 * 4);
     for chunk in input.chunks(3) {
