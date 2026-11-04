@@ -10,6 +10,7 @@ export component Header inherits Rectangle {
     in property <string> active-academic-year: "2024/2025";
     in property <bool> is-syncing: false;
     in-out property <int> student-filter-status: 0; // 0 = Aktif, 1 = Non-Aktif
+    in property <string> term-siswa: "Siswa";
 
     callback search-changed(string);
     callback search-submitted(string);
@@ -67,7 +68,7 @@ export component Header inherits Rectangle {
                                 }
 
                                 Text {
-                                    text: "Siswa Aktif";
+                                    text: root.term-siswa + " Aktif";
                                     font-size: 11px;
                                     font-weight: 700;
                                     color: root.student-filter-status == 0 ? white : Theme.text-muted;
@@ -162,7 +163,7 @@ export component Header inherits Rectangle {
                                 x: 0px;
                                 width: 100%;
                                 height: 100%;
-                                text: root.student-filter-status == 0 ? "Cari Siswa Aktif (Nama / NIS / NISN)..." : "Cari Siswa Non-Aktif / Alumni...";
+                                text: root.student-filter-status == 0 ? ("Cari " + root.term-siswa + " Aktif (Nama / NIS / NISN)...") : ("Cari " + root.term-siswa + " Non-Aktif / Alumni...");
                                 color: #94a3b8;
                                 font-size: 12px;
                                 vertical-alignment: center;

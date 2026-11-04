@@ -22,7 +22,7 @@ Format dokumen ini mengacu pada [Keep a Changelog](https://keepachangelog.com/en
 
 ### Diubah (Changed)
 - **Perbaikan Mesin Sinkronisasi Tagihan (`payment_assignments`):** Menghilangkan penguncian status lokal `pending_push` pada `payment_assignments` yang sebelumnya menghalangi pembaruan data tagihan siswa dari peladen web, otomatis memulihkan baris terisolir pada proses *pull*.
-- **Penegakan Default Protokol HTTPS:** Seluruh komunikasi jaringan ke peladen pusat (`https://sumbangan.smage.my.id`) kini menggunakan enkripsi TLS/HTTPS secara bawaan guna mencegah risiko penyadapan data keuangan pada jaringan lokal sekolah.
+- **Penegakan Default Protokol HTTPS:** Seluruh komunikasi jaringan ke peladen pusat (`https://partisipasi.sekolah.sch.id`) kini menggunakan enkripsi TLS/HTTPS secara bawaan guna mencegah risiko penyadapan data keuangan pada jaringan lokal sekolah.
 - **Restriksi Hak Akses Push Sync:** Membatasi endpoint `syncPush` di peladen pusat dengan *allowlist* khusus tabel transaksi kasir (`payments`, `payment_details`, `reliefs`, `journals`, `savings`, `savings_transactions`), menolak penimpaan data pengguna atau pengaturan sistem sekolah.
 - **Perbaikan Keamanan Rate Limiting OTP:** Reset batas laju pada `exchangeDesktopPairingCode` kini hanya dieksekusi setelah kode otorisasi 6-digit terbukti valid, belum pernah dipakai, dan belum kedaluwarsa.
 - **Penyensoran Kredensial Log:** Menyensor token otorisasi pada catatan log konsol deep-link untuk mencegah kebocoran informasi sensitif.

@@ -4,7 +4,7 @@ export component WizardView inherits Rectangle {
     background: Theme.bg-primary;
 
     in-out property <int> step: 1;
-    in-out property <string> api-url: "https://sumbangan.smage.my.id";
+    in-out property <string> api-url: "";
     in property <bool> is-testing: false;
     in property <string> test-message: "";
     in property <bool> test-success: false;
@@ -229,6 +229,12 @@ export component WizardView inherits Rectangle {
                                 HorizontalLayout {
                                     padding-left: 14px;
                                     padding-right: 14px;
+                                    if root.api-url == "": Text {
+                                        text: "https://partisipasi.sekolah.sch.id";
+                                        font-size: 13px;
+                                        color: #94a3b8;
+                                        vertical-alignment: center;
+                                    }
                                     TextInput {
                                         text <=> root.api-url;
                                         font-size: 13px;
