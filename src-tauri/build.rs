@@ -4,9 +4,11 @@ use std::path::Path;
 fn main() {
     // Try multiple possible paths to locate the database migrations
     let paths = vec![
-        "../../../Documents/partisipasi-sekolah/database/migrations",
-        "/Users/ardianryan/Documents/partisipasi-sekolah/database/migrations",
+        "../../partisipasi-web/database/migrations",
         "../../partisipasi-sekolah/database/migrations",
+        "/Users/ardianryan/Documents/partisipasi-app/partisipasi-web/database/migrations",
+        "/Users/ardianryan/Documents/partisipasi-sekolah/database/migrations",
+        "../../../Documents/partisipasi-sekolah/database/migrations",
     ];
 
     let mut source_dir_opt = None;
