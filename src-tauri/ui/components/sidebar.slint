@@ -1,0 +1,297 @@
+import { Theme } from "../theme.slint";
+
+export component SidebarItem inherits Rectangle {
+    in property <string> title: "";
+    in property <image> icon-src;
+    in property <bool> is-active: false;
+    in property <string> badge-text: "";
+    callback clicked();
+
+    height: 42px;
+    background: is-active ? Theme.primary-light : touch.has-hover ? #e6ecfc : transparent;
+    border-radius: 8px;
+    animate background { duration: 150ms; }
+
+    HorizontalLayout {
+        padding-left: 14px;
+        padding-right: 14px;
+        spacing: 12px;
+
+        VerticalLayout {
+            alignment: center;
+            width: 20px;
+            Image {
+                source: root.icon-src;
+                width: 18px;
+                height: 18px;
+                image-fit: contain;
+                colorize: is-active ? Theme.on-primary-light : Theme.text-muted;
+            }
+        }
+
+        Text {
+            text: root.title;
+            color: is-active ? Theme.on-primary-light : Theme.text-main;
+            font-size: 13px;
+            font-weight: is-active ? 700 : 500;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        if root.badge-text != "": VerticalLayout {
+            alignment: center;
+            Rectangle {
+                background: Theme.rose;
+                border-radius: 9px;
+                height: 18px;
+                HorizontalLayout {
+                    padding-left: 6px;
+                    padding-right: 6px;
+                    Text {
+                        text: root.badge-text;
+                        color: white;
+                        font-size: 10px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+        mouse-cursor: pointer;
+    }
+}
+
+export component Sidebar inherits Rectangle {
+    width: Theme.sidebar-width;
+    background: Theme.bg-secondary;
+    border-color: Theme.border;
+    border-width: 1px;
+
+    in property <int> active-tab: 0; // 0: POS, 1: Savings, 2: History, 3: Reports, 4: Sync
+    in property <string> user-name: "Kasir Loket 1";
+    in property <string> user-role: "Petugas Kasir";
+    in property <bool> is-online: false;
+    in property <string> pending-sync-count: "0";
+    in property <bool> savings-enabled: false;
+    in property <bool> has-school-logo: false;
+    in property <image> school-logo;
+
+    callback tab-selected(int);
+    callback logout-clicked();
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 16px;
+
+        // Header App Brand
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: start;
+
+            if root.has-school-logo: Rectangle {
+                width: 38px;
+                height: 38px;
+                background: white;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 8px;
+                clip: true;
+                Image {
+                    source: root.school-logo;
+                    width: 34px;
+                    height: 34px;
+                    image-fit: contain;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+
+            if !root.has-school-logo: Rectangle {
+                width: 38px;
+                height: 38px;
+                background: Theme.primary;
+                border-radius: 8px;
+                Text {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    text: "P";
+                    color: white;
+                    font-size: 20px;
+                    font-weight: 800;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                spacing: 2px;
+                Text {
+                    text: "Partisipasi";
+                    font-size: 16px;
+                    font-weight: 700;
+                    color: Theme.primary;
+                }
+                Text {
+                    text: "v0.2.0";
+                    font-size: 11px;
+                    font-weight: 500;
+                    color: Theme.text-muted;
+                }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: Theme.border;
+        }
+
+        // Navigation Menu Items (Strict Left-Aligned, Icons in Straight Vertical Line)
+        VerticalLayout {
+            spacing: 6px;
+            horizontal-stretch: 1;
+
+            SidebarItem {
+                title: "POS Kasir";
+                icon-src: @image-url("../assets/icons/monitor.svg");
+                is-active: root.active-tab == 0;
+                clicked => { root.tab-selected(0); }
+            }
+
+            if root.savings-enabled: SidebarItem {
+                title: "Buku Tabungan";
+                icon-src: @image-url("../assets/icons/savings.svg");
+                is-active: root.active-tab == 1;
+                clicked => { root.tab-selected(1); }
+            }
+
+            SidebarItem {
+                title: "Riwayat Transaksi";
+                icon-src: @image-url("../assets/icons/history.svg");
+                is-active: root.active-tab == 2;
+                clicked => { root.tab-selected(2); }
+            }
+
+            SidebarItem {
+                title: "Laporan Kas";
+                icon-src: @image-url("../assets/icons/reports.svg");
+                is-active: root.active-tab == 3;
+                clicked => { root.tab-selected(3); }
+            }
+
+            SidebarItem {
+                title: "Pengaturan Sync";
+                icon-src: @image-url("../assets/icons/sync.svg");
+                is-active: root.active-tab == 4;
+                badge-text: root.pending-sync-count == "0" ? "" : root.pending-sync-count;
+                clicked => { root.tab-selected(4); }
+            }
+        }
+
+        // Flexible Spacer
+        Rectangle {
+            vertical-stretch: 1;
+        }
+
+        // Footer Kasir Info Box
+        Rectangle {
+            background: Theme.bg-card;
+            border-radius: 8px;
+            border-color: Theme.border;
+            border-width: 1px;
+
+            VerticalLayout {
+                padding: 12px;
+                spacing: 10px;
+
+                HorizontalLayout {
+                    spacing: 10px;
+
+                    VerticalLayout {
+                        alignment: center;
+                        width: 32px;
+                        Rectangle {
+                            width: 32px;
+                            height: 32px;
+                            background: Theme.primary-light;
+                            border-radius: 6px;
+                            Image {
+                                x: (parent.width - self.width) / 2;
+                                y: (parent.height - self.height) / 2;
+                                source: @image-url("../assets/icons/user.svg");
+                                width: 16px;
+                                height: 16px;
+                                image-fit: contain;
+                                colorize: Theme.primary;
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: root.user-name;
+                            font-size: 13px;
+                            font-weight: 600;
+                            color: Theme.text-main;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: root.user-role;
+                            font-size: 11px;
+                            color: Theme.text-muted;
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    height: 18px;
+
+                    VerticalLayout {
+                        alignment: center;
+                        width: 8px;
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: root.is-online ? Theme.emerald : Theme.amber;
+                        }
+                    }
+
+                    Text {
+                        text: root.is-online ? "Sinkronisasi Terhubung" : "Mode Offline Lokal";
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: root.is-online ? Theme.emerald : Theme.amber;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    height: 28px;
+                    background: #fff5f5;
+                    border-color: #fecaca;
+                    border-width: 1px;
+                    border-radius: 6px;
+                    touch-logout := TouchArea {
+                        clicked => { root.logout-clicked(); }
+                        mouse-cursor: pointer;
+                    }
+                    Text {
+                        text: "Keluar Sesi";
+                        font-size: 11px;
+                        font-weight: 600;
+                        color: #dc2626;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

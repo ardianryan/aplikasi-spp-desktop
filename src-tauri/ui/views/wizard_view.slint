@@ -1,0 +1,445 @@
+import { Theme } from "../theme.slint";
+
+export component WizardView inherits Rectangle {
+    background: Theme.bg-primary;
+
+    in-out property <int> step: 1;
+    in-out property <string> api-url: "https://sumbangan.smage.my.id";
+    in property <bool> is-testing: false;
+    in property <string> test-message: "";
+    in property <bool> test-success: false;
+
+    callback test-connection-clicked(string);
+    callback finish-onboarding(string);
+
+    VerticalLayout {
+        alignment: center;
+
+        HorizontalLayout {
+            alignment: center;
+
+            Rectangle {
+                width: 600px;
+                background: Theme.bg-card;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 12px;
+                drop-shadow-blur: 24px;
+                drop-shadow-color: #00000018;
+
+                VerticalLayout {
+                    padding: 32px;
+                    spacing: 24px;
+
+                    // Brand & Header
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 12px;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 42px;
+                                height: 42px;
+                                background: Theme.primary-light;
+                                border-radius: 10px;
+                                Image {
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: @image-url("../assets/icons/bill.svg");
+                                    width: 22px;
+                                    height: 22px;
+                                    image-fit: contain;
+                                    colorize: Theme.primary;
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 2px;
+                            Text {
+                                text: "Partisipasi Sekolah";
+                                font-size: 18px;
+                                font-weight: 800;
+                                color: Theme.primary;
+                            }
+                            Text {
+                                text: "Penyiapan Awal Terminal Kasir POS Offline";
+                                font-size: 11px;
+                                color: Theme.text-muted;
+                            }
+                        }
+                    }
+
+                    // Stepper Track
+                    HorizontalLayout {
+                        spacing: 8px;
+                        alignment: center;
+
+                        Rectangle {
+                            height: 6px;
+                            horizontal-stretch: 1;
+                            border-radius: 3px;
+                            background: Theme.primary;
+                        }
+                        Rectangle {
+                            height: 6px;
+                            horizontal-stretch: 1;
+                            border-radius: 3px;
+                            background: root.step >= 2 ? Theme.primary : #e2e8f0;
+                            animate background { duration: 200ms; }
+                        }
+                        Rectangle {
+                            height: 6px;
+                            horizontal-stretch: 1;
+                            border-radius: 3px;
+                            background: root.step >= 3 ? Theme.primary : #e2e8f0;
+                            animate background { duration: 200ms; }
+                        }
+                    }
+
+                    if root.step == 1: VerticalLayout {
+                        spacing: 18px;
+
+                        VerticalLayout {
+                            spacing: 6px;
+                            Text {
+                                text: "Selamat Datang di Partisipasi Sekolah Desktop";
+                                font-size: 16px;
+                                font-weight: 700;
+                                color: Theme.text-main;
+                                horizontal-alignment: center;
+                            }
+                            Text {
+                                text: "Aplikasi kasir dan pembayaran sumbangan siswa. Dapat digunakan saat tidak ada koneksi internet dan otomatis tersinkronisasi saat tersambung kembali ke jaringan.";
+                                font-size: 12px;
+                                color: Theme.text-muted;
+                                horizontal-alignment: center;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        // Feature Grid
+                        HorizontalLayout {
+                            spacing: 12px;
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: Theme.bg-secondary;
+                                border-radius: 8px;
+                                VerticalLayout {
+                                    padding: 12px;
+                                    spacing: 4px;
+                                    Text { text: "Penyimpanan Aman"; font-size: 12px; font-weight: 700; color: Theme.text-main; }
+                                    Text { text: "Data transaksi tersimpan aman dan terproteksi di komputer sekolah."; font-size: 11px; color: Theme.text-muted; wrap: word-wrap; }
+                                }
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: Theme.bg-secondary;
+                                border-radius: 8px;
+                                VerticalLayout {
+                                    padding: 12px;
+                                    spacing: 4px;
+                                    Text { text: "Sinkronisasi Otomatis"; font-size: 12px; font-weight: 700; color: Theme.text-main; }
+                                    Text { text: "Data otomatis disinkronkan saat terhubung ke jaringan sekolah."; font-size: 11px; color: Theme.text-muted; wrap: word-wrap; }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 12px;
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: Theme.bg-secondary;
+                                border-radius: 8px;
+                                VerticalLayout {
+                                    padding: 12px;
+                                    spacing: 4px;
+                                    Text { text: "Cetak Kwitansi Langsung"; font-size: 12px; font-weight: 700; color: Theme.text-main; }
+                                    Text { text: "Cetak bukti pembayaran langsung ke mesin printer kasir."; font-size: 11px; color: Theme.text-muted; wrap: word-wrap; }
+                                }
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: Theme.bg-secondary;
+                                border-radius: 8px;
+                                VerticalLayout {
+                                    padding: 12px;
+                                    spacing: 4px;
+                                    Text { text: "Performa Cepat & Ringan"; font-size: 12px; font-weight: 700; color: Theme.text-main; }
+                                    Text { text: "Bekerja lancar, hemat memori, dan responsif."; font-size: 11px; color: Theme.text-muted; wrap: word-wrap; }
+                                }
+                            }
+                        }
+
+                        // Button Action
+                        Rectangle {
+                            height: 42px;
+                            background: touch-s1.has-hover ? Theme.primary-hover : Theme.primary;
+                            border-radius: 8px;
+                            animate background { duration: 150ms; }
+                            touch-s1 := TouchArea {
+                                clicked => { root.step = 2; }
+                                mouse-cursor: pointer;
+                            }
+                            HorizontalLayout {
+                                alignment: center;
+                                spacing: 8px;
+                                Text {
+                                    text: "Mulai Setup Konfigurasi";
+                                    color: white;
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    if root.step == 2: VerticalLayout {
+                        spacing: 16px;
+
+                        VerticalLayout {
+                            spacing: 4px;
+                            Text {
+                                text: "Sambungan Peladen Web Sekolah";
+                                font-size: 16px;
+                                font-weight: 700;
+                                color: Theme.text-main;
+                            }
+                            Text {
+                                text: "Masukkan alamat domain web sekolah tempat data master siswa dan tagihan berada.";
+                                font-size: 12px;
+                                color: Theme.text-muted;
+                            }
+                        }
+
+                        VerticalLayout {
+                            spacing: 6px;
+                            Text { text: "Alamat Web Sekolah (Endpoint):"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
+                            Rectangle {
+                                height: 42px;
+                                background: Theme.bg-secondary;
+                                border-color: Theme.border;
+                                border-width: 1px;
+                                border-radius: 8px;
+                                HorizontalLayout {
+                                    padding-left: 14px;
+                                    padding-right: 14px;
+                                    TextInput {
+                                        text <=> root.api-url;
+                                        font-size: 13px;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        if root.test-message != "": Rectangle {
+                            height: 38px;
+                            background: root.test-success ? #f0fdf4 : #fef2f2;
+                            border-color: root.test-success ? #bbf7d0 : #fecaca;
+                            border-width: 1px;
+                            border-radius: 6px;
+                            HorizontalLayout {
+                                padding-left: 14px;
+                                padding-right: 14px;
+                                Text {
+                                    text: root.test-message;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: root.test-success ? Theme.emerald : Theme.rose;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 10px;
+
+                            Rectangle {
+                                width: 100px;
+                                height: 42px;
+                                background: touch-back-2.has-hover ? #e2e8f0 : #f1f5f9;
+                                border-radius: 8px;
+                                animate background { duration: 150ms; }
+                                touch-back-2 := TouchArea {
+                                    clicked => { root.step = 1; }
+                                    mouse-cursor: pointer;
+                                }
+                                Text {
+                                    text: "Kembali";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: Theme.text-main;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Rectangle {
+                                width: 140px;
+                                height: 42px;
+                                background: root.is-testing ? #e2e8f0 : touch-test-w.has-hover ? #e2e8f0 : #ffffff;
+                                border-color: Theme.border;
+                                border-width: 1px;
+                                border-radius: 8px;
+                                animate background { duration: 150ms; }
+                                touch-test-w := TouchArea {
+                                    enabled: !root.is-testing;
+                                    clicked => { root.test-connection-clicked(root.api-url); }
+                                    mouse-cursor: pointer;
+                                }
+                                Text {
+                                    text: root.is-testing ? "Menguji..." : "Uji Sambungan";
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    color: Theme.text-main;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 42px;
+                                background: touch-next-2.has-hover ? Theme.primary-hover : Theme.primary;
+                                border-radius: 8px;
+                                animate background { duration: 150ms; }
+                                touch-next-2 := TouchArea {
+                                    clicked => { root.step = 3; }
+                                    mouse-cursor: pointer;
+                                }
+                                Text {
+                                    text: "Lanjut";
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    color: white;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+                    if root.step == 3: VerticalLayout {
+                        spacing: 18px;
+
+                        VerticalLayout {
+                            spacing: 6px;
+                            HorizontalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 48px;
+                                    height: 48px;
+                                    background: Theme.emerald-light;
+                                    border-radius: 24px;
+                                    Image {
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        source: @image-url("../assets/icons/check.svg");
+                                        width: 24px;
+                                        height: 24px;
+                                        image-fit: contain;
+                                    }
+                                }
+                            }
+                            Text {
+                                text: "Aplikasi Siap Digunakan!";
+                                font-size: 16px;
+                                font-weight: 700;
+                                color: Theme.text-main;
+                                horizontal-alignment: center;
+                            }
+                            Text {
+                                text: "Terminal kasir POS Anda telah terkonfigurasi dan database SQLite lokal siap digunakan secara offline.";
+                                font-size: 12px;
+                                color: Theme.text-muted;
+                                horizontal-alignment: center;
+                                wrap: word-wrap;
+                            }
+                        }
+
+                        // Summary Table
+                        Rectangle {
+                            background: Theme.bg-secondary;
+                            border-color: Theme.border;
+                            border-width: 1px;
+                            border-radius: 8px;
+
+                            VerticalLayout {
+                                padding: 14px;
+                                spacing: 8px;
+
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    Text { text: "Server Endpoint:"; font-size: 12px; color: Theme.text-muted; }
+                                    Text { text: root.api-url; font-size: 12px; font-weight: 700; color: Theme.primary; }
+                                }
+                                Rectangle { height: 1px; background: Theme.border; }
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    Text { text: "Keamanan Database:"; font-size: 12px; color: Theme.text-muted; }
+                                    Text { text: "Tersimpan Aman"; font-size: 12px; font-weight: 700; color: Theme.emerald; }
+                                }
+                                Rectangle { height: 1px; background: Theme.border; }
+                                HorizontalLayout {
+                                    alignment: space-between;
+                                    Text { text: "Versi Aplikasi:"; font-size: 12px; color: Theme.text-muted; }
+                                    Text { text: "v0.2.0"; font-size: 12px; font-weight: 700; color: Theme.text-main; }
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            spacing: 10px;
+
+                            Rectangle {
+                                width: 100px;
+                                height: 42px;
+                                background: touch-back-3.has-hover ? #e2e8f0 : #f1f5f9;
+                                border-radius: 8px;
+                                animate background { duration: 150ms; }
+                                touch-back-3 := TouchArea {
+                                    clicked => { root.step = 2; }
+                                    mouse-cursor: pointer;
+                                }
+                                Text {
+                                    text: "Ubah";
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    color: Theme.text-main;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                height: 42px;
+                                background: touch-fin.has-hover ? Theme.emerald-hover : Theme.emerald;
+                                border-radius: 8px;
+                                animate background { duration: 150ms; }
+                                touch-fin := TouchArea {
+                                    clicked => { root.finish-onboarding(root.api-url); }
+                                    mouse-cursor: pointer;
+                                }
+                                Text {
+                                    text: "Selesaikan & Masuk Aplikasi";
+                                    font-size: 13px;
+                                    font-weight: 700;
+                                    color: white;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

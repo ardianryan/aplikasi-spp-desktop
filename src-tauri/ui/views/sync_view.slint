@@ -1,0 +1,423 @@
+import { Theme } from "../theme.slint";
+
+export component SyncView inherits Rectangle {
+    background: Theme.bg-primary;
+
+    in-out property <string> base-url: "https://";
+    in property <string> user-name: "";
+    in property <string> user-role: "";
+    in property <bool> is-authenticated: false;
+    in property <bool> autostart-enabled: false;
+    in property <string> last-sync-time: "Belum pernah sinkron";
+    in property <string> pending-records-count: "0";
+    in property <string> sync-message: "";
+    in property <bool> is-syncing: false;
+    in property <bool> is-testing: false;
+    in property <string> test-result: "";
+
+    callback test-connection-clicked(string);
+    callback save-settings-clicked(string);
+    callback trigger-sync-clicked();
+    callback trigger-full-sync-clicked();
+    callback toggle-autostart-clicked();
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 14px;
+
+        HorizontalLayout {
+            height: 28px;
+            spacing: 10px;
+            alignment: start;
+            VerticalLayout {
+                alignment: center;
+                width: 20px;
+                Image {
+                    source: @image-url("../assets/icons/sync.svg");
+                    width: 18px;
+                    height: 18px;
+                    image-fit: contain;
+                    colorize: Theme.primary;
+                }
+            }
+            Text {
+                text: "Pengaturan & Sinkronisasi Server Pusat";
+                font-size: 18px;
+                font-weight: 700;
+                color: Theme.text-main;
+                vertical-alignment: center;
+            }
+        }
+
+        // Form Pengaturan Koneksi Server
+        Rectangle {
+            background: Theme.bg-card;
+            border-color: Theme.border;
+            border-width: 1px;
+            border-radius: 8px;
+
+            VerticalLayout {
+                padding: 16px;
+                spacing: 14px;
+
+                Text {
+                    text: "Pengaturan Sambungan Server";
+                    font-size: 14px;
+                    font-weight: 700;
+                    color: Theme.text-main;
+                }
+
+                // URL Server API Input
+                VerticalLayout {
+                    spacing: 4px;
+                    Text { text: "Alamat Server Utama:"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
+                    Rectangle {
+                        height: 38px;
+                        background: Theme.bg-primary;
+                        border-color: Theme.border;
+                        border-width: 1px;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 12px;
+                            TextInput {
+                                text <=> root.base-url;
+                                font-size: 13px;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                // 2. Status Otorisasi Terminal (Zero-Config Card)
+                Rectangle {
+                    background: root.is-authenticated ? #f0fdf4 : #fffbeb;
+                    border-color: root.is-authenticated ? #bbf7d0 : #fde68a;
+                    border-width: 1px;
+                    border-radius: 8px;
+
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 4px;
+
+                        HorizontalLayout {
+                            alignment: space-between;
+                            HorizontalLayout {
+                                spacing: 8px;
+                                VerticalLayout {
+                                    alignment: center;
+                                    width: 14px;
+                                    Image {
+                                        source: root.is-authenticated ? @image-url("../assets/icons/check.svg") : @image-url("../assets/icons/lock.svg");
+                                        width: 13px;
+                                        height: 13px;
+                                        image-fit: contain;
+                                        colorize: root.is-authenticated ? Theme.emerald : Theme.amber;
+                                    }
+                                }
+                                Text {
+                                    text: root.is-authenticated ? "Terminal Terotorisasi Otomatis" : "Menunggu Otorisasi Masuk";
+                                    font-size: 12px;
+                                    font-weight: 700;
+                                    color: root.is-authenticated ? Theme.emerald : Theme.amber;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            Rectangle {
+                                height: 20px;
+                                border-radius: 10px;
+                                background: root.is-authenticated ? #dcfce7 : #fef3c7;
+                                HorizontalLayout {
+                                    padding-left: 8px;
+                                    padding-right: 8px;
+                                    Text {
+                                        text: "Zero-Config";
+                                        font-size: 10px;
+                                        font-weight: 700;
+                                        color: root.is-authenticated ? Theme.emerald : Theme.amber;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: root.is-authenticated ? ("Kasir: " + root.user-name + " (" + root.user-role + ") • Kunci token dikelola otomatis oleh server.") : "Kunci otorisasi terminal dikelola secara otomatis oleh peladen pusat saat kasir masuk melalui SSO atau kode otorisasi 6-digit.";
+                            font-size: 11px;
+                            color: Theme.text-muted;
+                        }
+                    }
+                }
+
+                // 3. Failover & Layanan Latar Belakang (System Tray & Autostart)
+                Rectangle {
+                    background: Theme.bg-secondary;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: 8px;
+
+                    HorizontalLayout {
+                        padding: 12px;
+                        alignment: space-between;
+
+                        VerticalLayout {
+                            spacing: 2px;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: "Jalankan Otomatis saat Komputer Menyala (Autostart)";
+                                font-size: 12px;
+                                font-weight: 700;
+                                color: Theme.text-main;
+                            }
+                            Text {
+                                text: "Aplikasi berjalan di System Tray dan otomatis sinkronisasi di latar belakang sebagai failover saat server/internet pulih.";
+                                font-size: 11px;
+                                color: Theme.text-muted;
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 90px;
+                                height: 32px;
+                                background: root.autostart-enabled ? Theme.emerald : #e2e8f0;
+                                border-radius: 6px;
+                                animate background { duration: 150ms; }
+                                touch-auto := TouchArea {
+                                    clicked => { root.toggle-autostart-clicked(); }
+                                    mouse-cursor: pointer;
+                                }
+                                Text {
+                                    text: root.autostart-enabled ? "Aktif" : "Nonaktif";
+                                    color: root.autostart-enabled ? white : Theme.text-muted;
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 4. Tombol Aksi Simpan & Uji
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: start;
+
+                    Rectangle {
+                        width: 150px;
+                        height: 36px;
+                        background: touch-save.has-hover ? Theme.primary-hover : Theme.primary;
+                        border-radius: 6px;
+                        animate background { duration: 150ms; }
+                        touch-save := TouchArea {
+                            clicked => { root.save-settings-clicked(root.base-url); }
+                            mouse-cursor: pointer;
+                        }
+                        Text {
+                            text: "Simpan Sambungan";
+                            color: white;
+                            font-size: 12px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Rectangle {
+                        width: 140px;
+                        height: 36px;
+                        background: root.is-testing ? #e2e8f0 : touch-test.has-hover ? #e2e8f0 : #ffffff;
+                        border-color: Theme.border;
+                        border-width: 1px;
+                        border-radius: 6px;
+                        animate background { duration: 150ms; }
+                        touch-test := TouchArea {
+                            enabled: !root.is-testing;
+                            clicked => { root.test-connection-clicked(root.base-url); }
+                            mouse-cursor: pointer;
+                        }
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 6px;
+                            VerticalLayout {
+                                alignment: center;
+                                width: 14px;
+                                Image {
+                                    source: @image-url("../assets/icons/globe.svg");
+                                    width: 13px;
+                                    height: 13px;
+                                    image-fit: contain;
+                                    colorize: Theme.text-main;
+                                }
+                            }
+                            Text {
+                                text: root.is-testing ? "Menguji..." : "Uji Sambungan";
+                                color: Theme.text-main;
+                                font-size: 12px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    if root.test-result != "": Text {
+                        text: root.test-result;
+                        font-size: 12px;
+                        font-weight: 600;
+                        color: Theme.emerald;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Status Antrean Failover & Sinkronisasi
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.bg-card;
+            border-color: Theme.border;
+            border-width: 1px;
+            border-radius: 8px;
+
+            VerticalLayout {
+                padding: 16px;
+                spacing: 12px;
+
+                Text {
+                    text: "Status Sinkronisasi & Antrean Data Offline";
+                    font-size: 14px;
+                    font-weight: 700;
+                    color: Theme.text-main;
+                }
+
+                HorizontalLayout {
+                    spacing: 12px;
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: 68px;
+                        background: Theme.bg-secondary;
+                        border-radius: 6px;
+                        VerticalLayout {
+                            padding: 10px;
+                            spacing: 4px;
+                            Text { text: "Antrean Belum Terkirim (Pending Push):"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
+                            Text { text: root.pending-records-count + " Catatan Transaksi"; font-size: 16px; font-weight: 800; color: root.pending-records-count == "0" ? Theme.emerald : Theme.rose; }
+                        }
+                    }
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: 68px;
+                        background: Theme.bg-secondary;
+                        border-radius: 6px;
+                        VerticalLayout {
+                            padding: 10px;
+                            spacing: 4px;
+                            Text { text: "Sinkronisasi Terakhir:"; font-size: 11px; font-weight: 600; color: Theme.text-muted; }
+                            Text { text: root.last-sync-time; font-size: 14px; font-weight: 700; color: Theme.primary; }
+                        }
+                    }
+                }
+
+                if root.sync-message != "": Rectangle {
+                    height: 38px;
+                    background: Theme.primary-light;
+                    border-radius: 6px;
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        Text {
+                            text: root.sync-message;
+                            font-size: 12px;
+                            font-weight: 600;
+                            color: Theme.on-primary-light;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 12px;
+
+                    Rectangle {
+                        width: 200px;
+                        height: 40px;
+                        background: root.is-syncing ? #94a3b8 : touch-sync-now.has-hover ? Theme.emerald-hover : Theme.emerald;
+                        border-radius: 6px;
+                        animate background { duration: 150ms; }
+                        touch-sync-now := TouchArea {
+                            enabled: !root.is-syncing;
+                            clicked => { root.trigger-sync-clicked(); }
+                            mouse-cursor: pointer;
+                        }
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 8px;
+                            VerticalLayout {
+                                alignment: center;
+                                width: 14px;
+                                Image {
+                                    source: @image-url("../assets/icons/sync.svg");
+                                    width: 14px;
+                                    height: 14px;
+                                    image-fit: contain;
+                                    colorize: white;
+                                }
+                            }
+                            Text {
+                                text: root.is-syncing ? "Sinkronisasi..." : "Sinkronisasikan Sekarang";
+                                color: white;
+                                font-size: 12px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: 230px;
+                        height: 40px;
+                        background: root.is-syncing ? #94a3b8 : touch-sync-full.has-hover ? Theme.primary-hover : Theme.primary;
+                        border-radius: 6px;
+                        animate background { duration: 150ms; }
+                        touch-sync-full := TouchArea {
+                            enabled: !root.is-syncing;
+                            clicked => { root.trigger-full-sync-clicked(); }
+                            mouse-cursor: pointer;
+                        }
+                        HorizontalLayout {
+                            alignment: center;
+                            spacing: 8px;
+                            VerticalLayout {
+                                alignment: center;
+                                width: 14px;
+                                Image {
+                                    source: @image-url("../assets/icons/sync.svg");
+                                    width: 14px;
+                                    height: 14px;
+                                    image-fit: contain;
+                                    colorize: white;
+                                }
+                            }
+                            Text {
+                                text: root.is-syncing ? "Sinkronisasi..." : "Sinkronisasi Penuh (Semua Data)";
+                                color: white;
+                                font-size: 12px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    vertical-stretch: 1;
+                }
+            }
+        }
+    }
+}

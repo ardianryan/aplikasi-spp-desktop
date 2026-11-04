@@ -1,0 +1,298 @@
+import { Theme } from "../theme.slint";
+
+export component Header inherits Rectangle {
+    height: Theme.header-height;
+    background: Theme.bg-card;
+    border-color: Theme.border;
+    border-width: 1px;
+
+    in-out property <string> search-query: "";
+    in property <string> active-academic-year: "2024/2025";
+    in property <bool> is-syncing: false;
+    in-out property <int> student-filter-status: 0; // 0 = Aktif, 1 = Non-Aktif
+
+    callback search-changed(string);
+    callback search-submitted(string);
+    callback student-filter-changed(int);
+    callback trigger-sync-clicked();
+    callback about-clicked();
+
+    HorizontalLayout {
+        padding-left: 20px;
+        padding-right: 20px;
+        spacing: 16px;
+        alignment: space-between;
+
+        // Kiri: Status Siswa Toggle + Search Bar Pill
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: 12px;
+
+                // Status Siswa Segmented Toggle (Aktif vs Non-Aktif)
+                Rectangle {
+                    height: 36px;
+                    background: #f1f5f9;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: 8px;
+
+                    HorizontalLayout {
+                        padding: 3px;
+                        spacing: 3px;
+
+                        // Tombol: Siswa Aktif (Default)
+                        Rectangle {
+                            height: 30px;
+                            background: root.student-filter-status == 0 ? Theme.primary : transparent;
+                            border-radius: 6px;
+                            animate background { duration: 150ms; }
+
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                spacing: 5px;
+                                alignment: center;
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    width: 13px;
+                                    Image {
+                                        source: @image-url("../assets/icons/school.svg");
+                                        width: 13px;
+                                        height: 13px;
+                                        image-fit: contain;
+                                        colorize: root.student-filter-status == 0 ? white : Theme.text-muted;
+                                    }
+                                }
+
+                                Text {
+                                    text: "Siswa Aktif";
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    color: root.student-filter-status == 0 ? white : Theme.text-muted;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            touch-active := TouchArea {
+                                clicked => {
+                                    root.student-filter-status = 0;
+                                    root.student-filter-changed(0);
+                                }
+                                mouse-cursor: pointer;
+                            }
+                        }
+
+                        // Tombol: Non-Aktif / Alumni
+                        Rectangle {
+                            height: 30px;
+                            background: root.student-filter-status == 1 ? Theme.primary : transparent;
+                            border-radius: 6px;
+                            animate background { duration: 150ms; }
+
+                            HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                spacing: 5px;
+                                alignment: center;
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    width: 13px;
+                                    Image {
+                                        source: @image-url("../assets/icons/history-edu.svg");
+                                        width: 13px;
+                                        height: 13px;
+                                        image-fit: contain;
+                                        colorize: root.student-filter-status == 1 ? white : Theme.text-muted;
+                                    }
+                                }
+
+                                Text {
+                                    text: "Non-Aktif";
+                                    font-size: 11px;
+                                    font-weight: 700;
+                                    color: root.student-filter-status == 1 ? white : Theme.text-muted;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            touch-inactive := TouchArea {
+                                clicked => {
+                                    root.student-filter-status = 1;
+                                    root.student-filter-changed(1);
+                                }
+                                mouse-cursor: pointer;
+                            }
+                        }
+                    }
+                }
+
+                // Rounded Search Bar Pill (400px)
+                Rectangle {
+                    width: 380px;
+                    height: 36px;
+                    background: #f8fafc;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: 8px;
+
+                    HorizontalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        spacing: 10px;
+
+                        VerticalLayout {
+                            alignment: center;
+                            width: 15px;
+                            Image {
+                                source: @image-url("../assets/icons/search.svg");
+                                width: 14px;
+                                height: 14px;
+                                image-fit: contain;
+                                colorize: Theme.text-muted;
+                            }
+                        }
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+
+                            if root.search-query == "": Text {
+                                x: 0px;
+                                width: 100%;
+                                height: 100%;
+                                text: root.student-filter-status == 0 ? "Cari Siswa Aktif (Nama / NIS / NISN)..." : "Cari Siswa Non-Aktif / Alumni...";
+                                color: #94a3b8;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                            }
+
+                            TextInput {
+                                width: 100%;
+                                height: 100%;
+                                text <=> root.search-query;
+                                font-size: 12px;
+                                color: Theme.text-main;
+                                vertical-alignment: center;
+                                edited => {
+                                    root.search-changed(self.text);
+                                }
+                                accepted => {
+                                    root.search-submitted(self.text);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Kanan: Tahun Ajaran & Tombol Sinkron (Vertically Centered)
+        VerticalLayout {
+            alignment: center;
+            HorizontalLayout {
+                spacing: 10px;
+
+                // Rounded Badge Pill T.A
+                Rectangle {
+                    height: 34px;
+                    background: Theme.bg-secondary;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: 8px;
+                    HorizontalLayout {
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 6px;
+                        alignment: center;
+                        Text {
+                            text: "T.A:";
+                            font-size: 11px;
+                            font-weight: 500;
+                            color: Theme.text-muted;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: root.active-academic-year;
+                            font-size: 12px;
+                            font-weight: 700;
+                            color: Theme.primary;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+
+                // Rounded Button Pill Sinkronkan
+                Rectangle {
+                    width: 125px;
+                    height: 34px;
+                    background: root.is-syncing ? #94a3b8 : touch-sync.has-hover ? Theme.primary-hover : Theme.primary;
+                    border-radius: 8px;
+                    animate background { duration: 150ms; }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: 6px;
+
+                        VerticalLayout {
+                            alignment: center;
+                            width: 14px;
+                            Image {
+                                source: @image-url("../assets/icons/sync.svg");
+                                width: 13px;
+                                height: 13px;
+                                image-fit: contain;
+                                colorize: white;
+                            }
+                        }
+
+                        Text {
+                            text: root.is-syncing ? "Sinkron..." : "Sinkronkan";
+                            color: white;
+                            font-size: 12px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    touch-sync := TouchArea {
+                        enabled: !root.is-syncing;
+                        clicked => { root.trigger-sync-clicked(); }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                // Button Pill Tentang / Bantuan / Info Versi (SVG Icon, BUKAN EMOTICON)
+                Rectangle {
+                    width: 34px;
+                    height: 34px;
+                    background: touch-about.has-hover ? #e2e8f0 : Theme.bg-secondary;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: 8px;
+                    animate background { duration: 150ms; }
+
+                    HorizontalLayout {
+                        alignment: center;
+                        VerticalLayout {
+                            alignment: center;
+                            Image {
+                                source: @image-url("../assets/icons/info.svg");
+                                width: 15px;
+                                height: 15px;
+                                image-fit: contain;
+                                colorize: Theme.primary;
+                            }
+                        }
+                    }
+
+                    touch-about := TouchArea {
+                        clicked => { root.about-clicked(); }
+                        mouse-cursor: pointer;
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,5 +1,5 @@
 use tauri::State;
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 use chrono::Local;
@@ -135,7 +135,6 @@ pub struct SavingsTransaction {
     pub created_at: String,
 }
 
-// 1. Pencarian Siswa (POS)
 #[tauri::command]
 pub fn search_students(query: String, status: String, state: State<'_, DbState>) -> Result<Vec<StudentInfo>, String> {
     let conn = state.conn.lock().unwrap();
@@ -171,12 +170,10 @@ pub fn search_students(query: String, status: String, state: State<'_, DbState>)
     Ok(list)
 }
 
-// 2. Detail Pembayaran & Buku Tabungan Siswa
 #[tauri::command]
 pub fn get_student_details(student_id: String, state: State<'_, DbState>) -> Result<StudentDetails, String> {
     let conn = state.conn.lock().unwrap();
     
-    // a. Info Siswa
     let student = conn.query_row(
         "SELECT s.id, s.nis, s.nisn, s.nama, c.name as kelas 
          FROM students s
@@ -194,7 +191,6 @@ pub fn get_student_details(student_id: String, state: State<'_, DbState>) -> Res
         }
     ).map_err(|e| format!("Siswa tidak ditemukan: {}", e))?;
     
-    // b. Ambil riwayat cicilan (installments) dari payment_details untuk siswa bersangkutan
     let mut installments_map: std::collections::HashMap<String, Vec<InstallmentItem>> = std::collections::HashMap::new();
     if let Ok(mut inst_stmt) = conn.prepare(
         "SELECT pd.payment_assignment_id, pd.amount, pd.created_at
@@ -222,7 +218,6 @@ pub fn get_student_details(student_id: String, state: State<'_, DbState>) -> Res
         }
     }
 
-    // c. Tagihan / Assignments
     let mut stmt = conn.prepare(
         "SELECT a.id, t.name, t.type, a.month, a.amount, a.paid_amount, a.relief_amount, a.status, a.academic_year_id, y.name as academic_year_name
          FROM payment_assignments a
@@ -319,7 +314,6 @@ pub fn get_student_details(student_id: String, state: State<'_, DbState>) -> Res
         order_a.cmp(&order_b)
     });
     
-    // c. Riwayat Pembayaran
     let mut stmt = conn.prepare(
         "SELECT id, transaction_code, total_amount, payment_method_name, notes, created_at
          FROM payments
@@ -345,14 +339,12 @@ pub fn get_student_details(student_id: String, state: State<'_, DbState>) -> Res
         }
     }
     
-    // d. Saldo Tabungan Siswa
     let savings_balance: f64 = conn.query_row(
         "SELECT balance FROM savings WHERE student_id = ?;",
         [&student_id],
         |row| row.get(0),
     ).unwrap_or(0.0);
 
-    // e. Detect unpaid previous academic years
     let active_year_id: Option<String> = conn.query_row(
         "SELECT id FROM academic_years WHERE is_active = 1 LIMIT 1;",
         [],
@@ -394,18 +386,21 @@ pub fn save_payment(
     payment_method_name: String,
     notes: Option<String>,
     items: Vec<PaymentItemInput>,
-    loket_id: String,
+    _loket_id: String,
     state: State<'_, DbState>,
 ) -> Result<String, String> {
     let mut conn = state.conn.lock().unwrap();
     let tx = conn.transaction().map_err(|e| format!("Gagal memulai transaksi DB: {}", e))?;
     
-    // a. Generate Transaction Code Unik
     let date_str = Local::now().format("%Y%m%d").to_string();
-    let random_hex = format!("{:x}", Uuid::new_v4().as_u128() % 16777215); // 6 hex digits
-    let trx_code = format!("TRX-{}-{}-{}", loket_id.to_uppercase(), date_str, random_hex);
+    let random_hex: String = (0..6)
+        .map(|_| {
+            let idx = (Uuid::new_v4().as_u128() % 16) as usize;
+            b"0123456789ABCDEF"[idx] as char
+        })
+        .collect();
+    let trx_code = format!("TRX-{}-{}", date_str, random_hex);
     
-    // b. Simpan Header Pembayaran (payments)
     let payment_id = Uuid::new_v4().to_string();
     let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     
@@ -425,7 +420,6 @@ pub fn save_payment(
         ]
     ).map_err(|e| format!("Gagal menyimpan header transaksi: {}", e))?;
     
-    // c. Simpan Rincian Pembayaran (payment_details) & Update Assignments lokal
     for item in &items {
         let detail_id = Uuid::new_v4().to_string();
         tx.execute(
@@ -448,29 +442,36 @@ pub fn save_payment(
             params![item.amount, item.amount, item.amount, now_str, item.payment_assignment_id]
         ).map_err(|e| format!("Gagal memperbarui status tagihan lokal: {}", e))?;
         
-        // d. Catat Buku Jurnal Otomatis (Debet Masuk Kas)
-        let journal_id = Uuid::new_v4().to_string();
-        let journal_desc = format!("Penerimaan Pembayaran {} - Siswa ID {}", item.payment_type_name, student_id);
-        tx.execute(
-            "INSERT INTO journals (id, academic_year_id, date, type, category, description, amount, created_at, sync_status) 
-             VALUES (?, ?, ?, 'debet', 'pembayaran_spp', ?, ?, ?, 'pending_push');",
-            params![
-                journal_id,
-                academic_year_id,
-                &now_str[..10], // YYYY-MM-DD
-                journal_desc,
-                item.amount,
-                now_str,
-            ]
-        ).map_err(|e| format!("Gagal menyimpan jurnal penerimaan: {}", e))?;
     }
+    
+    // d. Catat Buku Jurnal Otomatis (Pemasukan Kas, 1:1 Paritas Web)
+    let journal_id = Uuid::new_v4().to_string();
+    let student_name: String = tx.query_row(
+        "SELECT nama FROM students WHERE id = ? LIMIT 1;",
+        [&student_id],
+        |row| row.get(0),
+    ).unwrap_or_else(|_| "Siswa".to_string());
+    let journal_desc = format!("Pembayaran dari {} ({})", student_name, trx_code);
+    tx.execute(
+        "INSERT INTO journals (id, date, type, category, description, amount, reference_id, user_id, academic_year_id, created_at, updated_at, sync_status) 
+         VALUES (?, ?, 'pemasukan', 'Pembayaran Siswa', ?, ?, ?, NULL, ?, ?, ?, 'pending_push');",
+        params![
+            journal_id,
+            &now_str[..10],
+            journal_desc,
+            total_amount,
+            payment_id,
+            academic_year_id,
+            now_str,
+            now_str,
+        ]
+    ).map_err(|e| format!("Gagal menyimpan jurnal penerimaan: {}", e))?;
     
     tx.commit().map_err(|e| format!("Gagal commit database: {}", e))?;
     
     Ok(trx_code)
 }
 
-// 4. Tabungan Murid (Mutasi Setor / Tarik)
 #[tauri::command]
 pub fn save_savings_transaction(
     student_id: String,
@@ -622,16 +623,20 @@ pub fn is_fresh_install(state: State<'_, DbState>) -> Result<bool, String> {
     Ok(api_url.trim().is_empty())
 }
 
-pub async fn perform_sync(db_state: &DbState) -> Result<String, String> {
+pub async fn perform_sync_internal(db_state: &DbState, force_full: bool) -> Result<String, String> {
     // 1. Ambil pengaturan sync & last_synced_at (lock sesingkat mungkin)
     let (api_url, api_key, last_synced_at) = {
         let conn = db_state.conn.lock().unwrap();
         let (url, key) = get_sync_settings(&conn);
-        let last_synced: String = conn.query_row(
-            "SELECT value FROM settings WHERE key = 'last_synced_at';",
-            [],
-            |row| row.get(0),
-        ).unwrap_or_else(|_| "1970-01-01 00:00:00".to_string());
+        let last_synced: String = if force_full {
+            "".to_string()
+        } else {
+            conn.query_row(
+                "SELECT value FROM settings WHERE key = 'last_synced_at';",
+                [],
+                |row| row.get(0),
+            ).unwrap_or_else(|_| "".to_string())
+        };
         (url, key, last_synced)
     };
     
@@ -682,6 +687,14 @@ pub async fn perform_sync(db_state: &DbState) -> Result<String, String> {
     }
     
     Ok(format!("Pull Sukses (Timestamp Server: {}). {}", sync_time, push_result))
+}
+
+pub async fn perform_sync(db_state: &DbState) -> Result<String, String> {
+    perform_sync_internal(db_state, false).await
+}
+
+pub async fn perform_full_sync(db_state: &DbState) -> Result<String, String> {
+    perform_sync_internal(db_state, true).await
 }
 
 #[tauri::command]
@@ -818,6 +831,50 @@ pub async fn save_session(
     })
 }
 
+pub fn save_exchanged_session(
+    conn: &Connection,
+    exchange: crate::sync::ExchangeCodeResult,
+) -> Result<UserSession, String> {
+    let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+    // Simpan API Key jika peladen mengembalikannya (Zero-Config provisioning)
+    if !exchange.api_key.is_empty() {
+        conn.execute(
+            "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_key', ?)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+            [&exchange.api_key],
+        ).ok();
+    }
+
+    let uid = exchange.user.id;
+
+    conn.execute(
+        "INSERT INTO users (id, username, nama, role, is_active, created_at) 
+         VALUES (?, ?, ?, ?, 1, ?)
+         ON CONFLICT(id) DO UPDATE SET nama = excluded.nama, role = excluded.role, is_active = 1;",
+        params![uid, exchange.user.username, exchange.user.nama, exchange.user.role, now_str]
+    ).map_err(|e| format!("Gagal menyimpan profil pengguna: {}", e))?;
+
+    let token_id = Uuid::new_v4().to_string();
+    let _ = conn.execute("DELETE FROM user_tokens;", []);
+    conn.execute(
+        "INSERT INTO user_tokens (id, user_id, token, created_at) VALUES (?, ?, ?, ?);",
+        params![token_id, uid, exchange.token, now_str]
+    ).map_err(|e| format!("Gagal menyimpan token sesi: {}", e))?;
+
+    Ok(UserSession {
+        token: exchange.token,
+        nama: exchange.user.nama,
+        role: exchange.user.role,
+    })
+}
+
+pub fn logout_conn(conn: &Connection) -> Result<(), String> {
+    conn.execute("DELETE FROM user_tokens;", [])
+        .map_err(|e| format!("Gagal logout: {}", e))?;
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn login_with_pairing_code(
     code: String,
@@ -840,45 +897,13 @@ pub async fn login_with_pairing_code(
     let exchange = crate::sync::exchange_code_with_server(&api_url, &api_key, &clean_code).await?;
 
     let conn = state.conn.lock().unwrap();
-    let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
-
-    // Simpan API Key jika peladen mengembalikannya (Zero-Config provisioning)
-    if !exchange.api_key.is_empty() {
-        conn.execute(
-            "INSERT INTO settings (id, key, value) VALUES (lower(hex(randomblob(16))), 'api_key', ?)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
-            [&exchange.api_key],
-        ).ok();
-    }
-
-    let uid = exchange.user.id;
-
-    conn.execute(
-        "INSERT INTO users (id, username, nama, role, is_active, created_at) 
-         VALUES (?, ?, ?, ?, 1, ?)
-         ON CONFLICT(id) DO UPDATE SET nama = excluded.nama, role = excluded.role, is_active = 1;",
-        params![uid, exchange.user.username, exchange.user.nama, exchange.user.role, now_str]
-    ).map_err(|e| format!("Gagal menyimpan profil pengguna: {}", e))?;
-
-    let token_id = Uuid::new_v4().to_string();
-    conn.execute(
-        "INSERT INTO user_tokens (id, user_id, token, created_at) VALUES (?, ?, ?, ?);",
-        params![token_id, uid, exchange.token, now_str]
-    ).map_err(|e| format!("Gagal menyimpan token sesi: {}", e))?;
-
-    Ok(UserSession {
-        token: exchange.token,
-        nama: exchange.user.nama,
-        role: exchange.user.role,
-    })
+    save_exchanged_session(&conn, exchange)
 }
 
 #[tauri::command]
 pub fn logout(state: State<'_, DbState>) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
-    conn.execute("DELETE FROM user_tokens;", [])
-        .map_err(|e| format!("Gagal logout: {}", e))?;
-    Ok(())
+    logout_conn(&conn)
 }
 
 #[tauri::command]
@@ -903,14 +928,11 @@ fn hash_pin_with_salt(pin: &str, salt: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-#[tauri::command]
-pub fn set_offline_pin(pin: String, state: State<'_, DbState>) -> Result<(), String> {
+pub fn set_offline_pin_conn(conn: &Connection, pin: &str) -> Result<(), String> {
     let trimmed = pin.trim();
     if trimmed.len() != 6 || !trimmed.chars().all(|c| c.is_ascii_digit()) {
         return Err("PIN harus berupa 6 digit angka.".to_string());
     }
-    
-    let conn = state.conn.lock().unwrap();
     
     // Dapatkan atau buat salt dinamis unik per perangkat
     let salt: String = conn.query_row(
@@ -936,9 +958,7 @@ pub fn set_offline_pin(pin: String, state: State<'_, DbState>) -> Result<(), Str
     Ok(())
 }
 
-#[tauri::command]
-pub fn has_offline_pin(state: State<'_, DbState>) -> Result<bool, String> {
-    let conn = state.conn.lock().unwrap();
+pub fn has_offline_pin_conn(conn: &Connection) -> Result<bool, String> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM settings WHERE key = 'cashier_offline_pin' AND value IS NOT NULL AND length(value) > 0;",
         [],
@@ -947,10 +967,8 @@ pub fn has_offline_pin(state: State<'_, DbState>) -> Result<bool, String> {
     Ok(count > 0)
 }
 
-#[tauri::command]
-pub fn verify_offline_pin(pin: String, state: State<'_, DbState>) -> Result<Option<UserSession>, String> {
+pub fn verify_offline_pin_conn(conn: &Connection, pin: &str) -> Result<Option<UserSession>, String> {
     let trimmed = pin.trim();
-    let conn = state.conn.lock().unwrap();
 
     let salt: String = conn.query_row(
         "SELECT value FROM settings WHERE key = 'cashier_offline_pin_salt';",
@@ -976,11 +994,12 @@ pub fn verify_offline_pin(pin: String, state: State<'_, DbState>) -> Result<Opti
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             ).ok();
 
-            let (user_id, nama, role) = user.unwrap_or_else(|| (Uuid::new_v4().to_string(), "Kasir Offline".to_string(), "kasir".to_string()));
+            let (user_id, nama, role) = user.unwrap_or_else(|| (Uuid::new_v4().to_string(), "Kasir Loket 1".to_string(), "Petugas Kasir".to_string()));
             let token = format!("offline_pin_{}", &Uuid::new_v4().to_string().replace("-", "")[..16]);
             
             let now_str = Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
             let token_id = Uuid::new_v4().to_string();
+            let _ = conn.execute("DELETE FROM user_tokens;", []);
             let _ = conn.execute(
                 "INSERT INTO user_tokens (id, user_id, token, created_at) VALUES (?, ?, ?, ?);",
                 params![token_id, user_id, token, now_str]
@@ -995,6 +1014,24 @@ pub fn verify_offline_pin(pin: String, state: State<'_, DbState>) -> Result<Opti
     }
 
     Ok(None)
+}
+
+#[tauri::command]
+pub fn set_offline_pin(pin: String, state: State<'_, DbState>) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    set_offline_pin_conn(&conn, &pin)
+}
+
+#[tauri::command]
+pub fn has_offline_pin(state: State<'_, DbState>) -> Result<bool, String> {
+    let conn = state.conn.lock().unwrap();
+    has_offline_pin_conn(&conn)
+}
+
+#[tauri::command]
+pub fn verify_offline_pin(pin: String, state: State<'_, DbState>) -> Result<Option<UserSession>, String> {
+    let conn = state.conn.lock().unwrap();
+    verify_offline_pin_conn(&conn, &pin)
 }
 
 #[derive(Serialize, Deserialize, Clone)]

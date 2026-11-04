@@ -1,7 +1,10 @@
-mod db;
-mod migrations;
-mod sync;
-mod commands;
+pub mod db;
+pub mod migrations;
+pub mod sync;
+pub mod commands;
+pub mod slint_app;
+
+pub use slint_app::{run_slint_app, run_slint_native};
 
 use std::sync::Mutex;
 use tauri::{

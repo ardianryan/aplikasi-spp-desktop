@@ -488,5 +488,5 @@ Memvalidasi token otentikasi sesi browser / deep link yang diterima desktop lang
 
 - API Key disimpan terenkripsi dan harus dijaga kerahasiaannya
 - Endpoint menggunakan `hash_equals()` untuk mencegah timing attack pada perbandingan API Key
-- CORS header `Access-Control-Allow-Origin: *` diaktifkan khusus untuk kebutuhan integrasi desktop client native
+- CORS header `Access-Control-Allow-Origin: *` diaktifkan khusus untuk kebutuhan integrasi klien desktop
 - Semua halaman login dan redirect desktop menampilkan favicon sekolah untuk mencegah kebingungan phishing
