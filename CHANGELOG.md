@@ -6,6 +6,17 @@ Format dokumen ini mengacu pada [Keep a Changelog](https://keepachangelog.com/en
 
 ---
 
+## [0.2.1] - 2026-11-05
+
+### Dibuat (Added)
+- **Desain Baru Ikon & Identitas Aplikasi Partisipasi Sekolah:** Merilis set ikon resmi berstandar modern berbasis vektor geometris (monogram P beraksen gotong-royong, pilar pendidikan, dan bintang capaian akademik), menggantikan ikon bawaan templat dan mendukung seluruh resolusi platform (macOS ICNS, Windows ICO, dan set PNG 16x16 hingga 512x512).
+- **Alur Mandiri Pencetakan Kuitansi (*In-App*):**
+  - Dialog pratinjau kuitansi di layar kasir otomatis menutup seketika saat tombol cetak ditekan (*auto-dismiss*), mengembalikan fokus kasir ke transaksi berikutnya tanpa perlu menekan tombol tutup terpisah.
+  - Dialog cetak pada Windows dialihkan ke mode jendela mandiri (*App-Mode*) dengan parameter penutupan otomatis pasca-cetak (`window.onafterprint = window.close()`), mencegah terbukanya peramban luar dengan bilah tautan atau deretan tab.
+- **Pembersihan Istilah Terlarang:** Menghapus seluruh residu istilah non-standar pada penamaan fungsi perantara (`run_slint_desktop`) demi kepatuhan penuh terhadap pedoman pengembangan proyek.
+
+---
+
 ## [0.2.0] - 2026-11-04
 
 ### Dibuat (Added)

@@ -4,7 +4,7 @@ pub mod sync;
 pub mod commands;
 pub mod slint_app;
 
-pub use slint_app::{run_slint_app, run_slint_native};
+pub use slint_app::{run_slint_app, run_slint_desktop};
 
 use std::sync::Mutex;
 use tauri::{

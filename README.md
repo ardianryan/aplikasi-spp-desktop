@@ -1,10 +1,20 @@
-# Partisipasi Sekolah Desktop Client
-**Aplikasi Kasir POS & Pembayaran Sumbangan Sekolah (Offline-First)**
+<p align="center">
+  <img src="src-tauri/icons/icon.png" width="128" height="128" alt="Logo Partisipasi Sekolah">
+</p>
 
-[![Release](https://img.shields.io/badge/release-v0.2.0-blue.svg)](https://github.com/ardianryan/aplikasi-spp-desktop/releases/tag/v0.2.0)
-[![Security](https://img.shields.io/badge/security-SQLCipher%20AES--256-emerald.svg)](SECURITY.md)
-[![Compliance](https://img.shields.io/badge/compliance-UU%20PDP%20%7C%20UU%20ITE-002b59.svg)](SECURITY.md)
-[![Stack](https://img.shields.io/badge/tech--stack-Slint%20UI%20%7C%20Rust%20%7C%20SQLCipher-indigo.svg)](#teknologi--arsitektur)
+<h1 align="center">Partisipasi Sekolah Desktop Client</h1>
+
+<p align="center">
+  <strong>Aplikasi Kasir POS & Pembayaran Sumbangan Sekolah (Offline-First)</strong><br>
+  Dikembangkan oleh <b>PMTI SMAN 1 GEDEG</b>
+</p>
+
+<p align="center">
+  <a href="https://github.com/ardianryan/aplikasi-spp-desktop/releases/tag/v0.2.1"><img src="https://img.shields.io/badge/release-v0.2.1-blue.svg" alt="Release"></a>
+  <a href="SECURITY.md"><img src="https://img.shields.io/badge/security-SQLCipher%20AES--256-emerald.svg" alt="Security"></a>
+  <a href="SECURITY.md"><img src="https://img.shields.io/badge/compliance-UU%20PDP%20%7C%20UU%20ITE-002b59.svg" alt="Compliance"></a>
+  <a href="#teknologi--arsitektur"><img src="https://img.shields.io/badge/tech--stack-Slint%20UI%20%7C%20Rust%20%7C%20SQLCipher-indigo.svg" alt="Tech Stack"></a>
+</p>
 
 ---
 

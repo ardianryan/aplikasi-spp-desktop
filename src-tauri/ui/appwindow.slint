@@ -920,7 +920,11 @@ export component AppWindow inherits Window {
                         border-radius: 6px;
                         animate background { duration: 150ms; }
                         touch-prn-btn := TouchArea {
-                            clicked => { root.execute-direct-print(root.receipt-modal-data.transaction_code); }
+                            clicked => {
+                                root.execute-direct-print(root.receipt-modal-data.transaction_code);
+                                root.show-receipt-modal = false;
+                                root.close-receipt-modal();
+                            }
                             mouse-cursor: pointer;
                         }
                         HorizontalLayout {
