@@ -134,7 +134,7 @@ fn check_updates_background(app_weak: slint::Weak<AppWindow>) {
                     _ => {
                         let _ = slint::invoke_from_event_loop(move || {
                             if let Some(app) = app_weak.upgrade() {
-                                app.set_update_status_text("Aplikasi menggunakan versi terbaru (v0.2.0).".into());
+                                app.set_update_status_text("Aplikasi menggunakan versi terbaru (v0.2.1).".into());
                             }
                         });
                     }
@@ -157,7 +157,7 @@ fn get_ipc_socket_path() -> std::path::PathBuf {
 }
 
 pub fn run_slint_app() -> Result<(), Box<dyn std::error::Error>> {
-    println!("[INFO] Menjalankan Partisipasi Sekolah Desktop v0.2.0...");
+    println!("[INFO] Menjalankan Partisipasi Sekolah Desktop v0.2.1...");
 
     // Deteksi argumen baris perintah untuk deep-linking (partisipasi-sekolah://)
     let args: Vec<String> = std::env::args().collect();
@@ -1624,7 +1624,7 @@ pub fn run_slint_app() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn run_slint_native() -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_slint_desktop() -> Result<(), Box<dyn std::error::Error>> {
     run_slint_app()
 }
 
@@ -1785,9 +1785,9 @@ fn update_branding_and_settings(app: &AppWindow, conn: &Connection) {
     ).unwrap_or_default();
 
     let win_title = if !school_name.trim().is_empty() {
-        format!("{} - Partisipasi Sekolah Desktop v0.2.0", school_name.trim())
+        format!("{} - Partisipasi Sekolah Desktop v0.2.1", school_name.trim())
     } else {
-        "Partisipasi Sekolah Desktop v0.2.0".to_string()
+        "Partisipasi Sekolah Desktop v0.2.1".to_string()
     };
     app.set_window_title(win_title.into());
 
@@ -2501,6 +2501,11 @@ fn generate_receipt_html(conn: &Connection, trx_code: &str, cashier_name: &str) 
                 window.print();
             }}, 250);
         }});
+        window.addEventListener('afterprint', function() {{
+            setTimeout(function() {{
+                window.close();
+            }}, 200);
+        }});
     </script>
 </body>
 </html>
@@ -2541,18 +2546,39 @@ fn send_receipt_to_printer(conn: &Connection, trx_code: &str, cashier_name: &str
     std::fs::write(&tmp_path, html_content)
         .map_err(|e| format!("Gagal membuat berkas kuitansi cetak: {}", e))?;
 
-    // Buka berkas HTML menggunakan peramban/penampil default sistem untuk memicu dialog print asli
+    // Buka berkas HTML menggunakan jendela dialog mandiri atau penampil dokumen sistem
     #[cfg(windows)]
     {
-        let opened = open::that(&tmp_path);
-        if opened.is_err() {
-            let rundll = std::process::Command::new("rundll32.exe")
-                .args(["url.dll,FileProtocolHandler", &tmp_path.display().to_string()])
+        let file_url = format!("file:///{}", tmp_path.display().to_string().replace('\\', "/"));
+        let edge_candidates = [
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            "msedge.exe",
+        ];
+
+        let mut launched = false;
+        for exe in &edge_candidates {
+            if let Ok(_) = std::process::Command::new(exe)
+                .args([&format!("--app={}", file_url), "--window-size=850,750"])
+                .spawn()
+            {
+                launched = true;
+                break;
+            }
+        }
+
+        if !launched {
+            let ps_print = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &format!("Start-Process -FilePath '{}' -Verb Print", tmp_path.display())])
                 .spawn();
-            if rundll.is_err() {
-                let _ = std::process::Command::new("cmd")
-                    .args(["/C", "start", "", &tmp_path.display().to_string()])
+
+            if ps_print.is_err() {
+                let rundll = std::process::Command::new("rundll32.exe")
+                    .args(["url.dll,FileProtocolHandler", &tmp_path.display().to_string()])
                     .spawn();
+                if rundll.is_err() {
+                    let _ = open::that(&tmp_path);
+                }
             }
         }
     }
